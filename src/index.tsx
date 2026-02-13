@@ -1238,22 +1238,43 @@ app.get('/trade', (c) => {
         #chartContainer {
             position: relative;
             width: 100%;
-            height: 600px;
+            height: 400px;
+        }
+        @media (min-width: 640px) {
+            #chartContainer {
+                height: 500px;
+            }
+        }
+        @media (min-width: 1024px) {
+            #chartContainer {
+                height: 600px;
+            }
         }
         #rsiContainer {
             position: relative;
             width: 100%;
-            height: 150px;
+            height: 100px;
             margin-top: 10px;
+        }
+        @media (min-width: 640px) {
+            #rsiContainer {
+                height: 120px;
+            }
+        }
+        @media (min-width: 1024px) {
+            #rsiContainer {
+                height: 150px;
+            }
         }
     </style>
 </head>
 <body class="bg-gray-100 overflow-hidden">
     <!-- ヘッダー -->
-    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-coins mr-2"></i>GOLD LABO</h1>
-            <nav class="flex space-x-4">
+            <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-coins mr-1 sm:mr-2"></i>GOLD LABO</h1>
+            <!-- PC用ナビゲーション -->
+            <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
@@ -1261,6 +1282,19 @@ app.get('/trade', (c) => {
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
                 <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
             </nav>
+            <!-- スマホ用メニューボタン -->
+            <button onclick="toggleMobileMenu()" class="md:hidden text-white">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        <!-- スマホ用メニュー -->
+        <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
+            <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
+            <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
+            <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
+            <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
+            <button onclick="logout()" class="block w-full text-left py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-sign-out-alt mr-2"></i>ログアウト</button>
         </div>
     </header>
 
@@ -1277,39 +1311,39 @@ app.get('/trade', (c) => {
         </div>
     </div>
 
-    <!-- メインコンテンツ: 2カラムレイアウト -->
-    <div class="flex h-[calc(100vh-72px)]">
-        <!-- 左側: GOLD10チャート -->
-        <div class="w-2/3 bg-white p-4 overflow-y-auto border-r border-gray-300">
-            <div class="mb-4">
-                <h2 class="text-2xl font-bold text-gray-800 mb-2">
-                    <i class="fas fa-chart-candlestick mr-2 text-yellow-600"></i>
+    <!-- メインコンテンツ: レスポンシブレイアウト -->
+    <div class="flex flex-col lg:flex-row h-[calc(100vh-72px)]">
+        <!-- チャートエリア（PC: 左2/3、スマホ: 上半分） -->
+        <div class="w-full lg:w-2/3 bg-white p-2 sm:p-4 overflow-y-auto border-b lg:border-b-0 lg:border-r border-gray-300">
+            <div class="mb-2 sm:mb-4">
+                <h2 class="text-lg sm:text-2xl font-bold text-gray-800 mb-1 sm:mb-2">
+                    <i class="fas fa-chart-candlestick mr-1 sm:mr-2 text-yellow-600"></i>
                     GOLD10 練習チャート
                 </h2>
-                <p class="text-sm text-gray-600">
+                <p class="text-xs sm:text-sm text-gray-600">
                     <i class="fas fa-info-circle mr-1"></i>
-                    過去12時間分の1分足ローソク足チャート（全ユーザー共通）
+                    1分足ローソク足チャート（全ユーザー共通）
                 </p>
             </div>
             
             <!-- 現在価格表示 -->
-            <div class="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-lg shadow-md p-4 mb-4">
+            <div class="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-lg shadow-md p-3 sm:p-4 mb-2 sm:mb-4">
                 <div class="flex justify-between items-center">
                     <div>
-                        <h3 class="text-sm text-gray-600 mb-1">GOLD10 現在価格</h3>
-                        <div id="gold10Price" class="text-4xl font-bold text-yellow-700">$0.00</div>
+                        <h3 class="text-xs sm:text-sm text-gray-600 mb-1">GOLD10 現在価格</h3>
+                        <div id="gold10Price" class="text-2xl sm:text-4xl font-bold text-yellow-700">$0.00</div>
                     </div>
                     <div class="text-right">
-                        <div class="text-sm text-gray-600">RSI (14)</div>
-                        <div id="gold10RSI" class="text-2xl font-bold text-blue-600">--</div>
+                        <div class="text-xs sm:text-sm text-gray-600">RSI (14)</div>
+                        <div id="gold10RSI" class="text-xl sm:text-2xl font-bold text-blue-600">--</div>
                     </div>
                 </div>
             </div>
             
             <!-- ローソク足チャート -->
-            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
-                <h3 class="text-lg font-bold mb-2 text-gray-700">
-                    <i class="fas fa-chart-line mr-2"></i>価格チャート
+            <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4">
+                <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
+                    <i class="fas fa-chart-line mr-1 sm:mr-2"></i>価格チャート
                 </h3>
                 <div style="position: relative;">
                     <div id="chartContainer"></div>
@@ -1333,19 +1367,19 @@ app.get('/trade', (c) => {
             </div>
         </div>
 
-        <!-- 右側: 取引UI -->
-        <div class="w-1/3 bg-gray-50 p-4 overflow-y-auto">
+        <!-- 取引UIエリア（PC: 右1/3、スマホ: 下半分） -->
+        <div class="w-full lg:w-1/3 bg-gray-50 p-2 sm:p-4 overflow-y-auto">
             <!-- 残高表示 -->
-            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+            <div class="bg-white rounded-lg shadow-md p-3 sm:p-4 mb-3 sm:mb-4">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-gray-600 text-sm">残高</span>
-                    <span class="text-gray-600 text-sm">総損益</span>
+                    <span class="text-gray-600 text-xs sm:text-sm">残高</span>
+                    <span class="text-gray-600 text-xs sm:text-sm">総損益</span>
                 </div>
                 <div class="flex justify-between items-center">
-                    <span id="balance" class="text-2xl font-bold text-gray-800">¥0</span>
-                    <span id="totalProfit" class="text-xl font-bold">¥0</span>
+                    <span id="balance" class="text-xl sm:text-2xl font-bold text-gray-800">¥0</span>
+                    <span id="totalProfit" class="text-lg sm:text-xl font-bold">¥0</span>
                 </div>
-                <div class="text-center mt-2">
+                <div class="text-center mt-2 hidden sm:block">
                     <p class="text-xs text-gray-500">
                         <i class="fas fa-info-circle mr-1"></i>
                         残高リセット希望者はサポートラインに問い合わせください
@@ -1353,51 +1387,51 @@ app.get('/trade', (c) => {
                 </div>
             </div>
 
-            <!-- 購入金額 -->
-            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
-                <label class="block text-gray-700 font-medium mb-3">購入ロット数</label>
+            <!-- 購入ロット数 -->
+            <div class="bg-white rounded-lg shadow-md p-3 sm:p-4 mb-3 sm:mb-4">
+                <label class="block text-gray-700 font-medium mb-2 sm:mb-3 text-sm sm:text-base">購入ロット数</label>
                 
-                <div class="text-center mb-4">
-                    <div class="py-3 bg-blue-100 rounded-lg border-2 border-blue-400">
-                        <span class="text-lg font-bold text-blue-800">1 lot 固定</span>
+                <div class="text-center mb-2 sm:mb-4">
+                    <div class="py-2 sm:py-3 bg-blue-100 rounded-lg border-2 border-blue-400">
+                        <span class="text-base sm:text-lg font-bold text-blue-800">1 lot 固定</span>
                     </div>
                 </div>
             </div>
 
             <!-- 売買ボタン -->
-            <div class="grid grid-cols-2 gap-3 mb-4">
-                <button onclick="openPosition('BUY')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg">
-                    <i class="fas fa-arrow-up mr-2"></i>買う
+            <div class="grid grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4">
+                <button onclick="openPosition('BUY')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 sm:py-4 rounded-lg shadow-lg text-sm sm:text-base">
+                    <i class="fas fa-arrow-up mr-1 sm:mr-2"></i>買う
                 </button>
-                <button onclick="openPosition('SELL')" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-4 rounded-lg shadow-lg">
-                    <i class="fas fa-arrow-down mr-2"></i>売る
+                <button onclick="openPosition('SELL')" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-3 sm:py-4 rounded-lg shadow-lg text-sm sm:text-base">
+                    <i class="fas fa-arrow-down mr-1 sm:mr-2"></i>売る
                 </button>
             </div>
 
             <!-- オープンポジション表示 -->
-            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
-                <h3 class="text-lg font-bold mb-3 text-gray-700">
+            <div class="bg-white rounded-lg shadow-md p-3 sm:p-4 mb-3 sm:mb-4">
+                <h3 class="text-base sm:text-lg font-bold mb-2 sm:mb-3 text-gray-700">
                     <i class="fas fa-list mr-2"></i>保有ポジション
                 </h3>
                 <div id="openPositions" class="space-y-3"></div>
             </div>
 
             <!-- オンラインチャット -->
-            <div class="bg-white rounded-lg shadow-md mb-4">
-                <button onclick="toggleChat()" class="w-full flex items-center justify-between p-4 text-gray-700 hover:text-gray-900">
+            <div class="bg-white rounded-lg shadow-md mb-3 sm:mb-4">
+                <button onclick="toggleChat()" class="w-full flex items-center justify-between p-3 sm:p-4 text-gray-700 hover:text-gray-900">
                     <div class="flex items-center">
                         <i class="fas fa-comments mr-2"></i>
-                        <span>オンラインチャット</span>
+                        <span class="text-sm sm:text-base">オンラインチャット</span>
                     </div>
                     <i id="chatToggleIcon" class="fas fa-chevron-down"></i>
                 </button>
                 
                 <!-- チャットエリア -->
                 <div id="chatArea" class="hidden border-t border-gray-200">
-                    <div id="chatMessages" class="h-64 overflow-y-auto p-4 space-y-2 bg-gray-50">
-                        <p class="text-center text-gray-500 text-sm">読み込み中...</p>
+                    <div id="chatMessages" class="h-48 sm:h-64 overflow-y-auto p-3 sm:p-4 space-y-2 bg-gray-50">
+                        <p class="text-center text-gray-500 text-xs sm:text-sm">読み込み中...</p>
                     </div>
-                    <div class="p-4 bg-white border-t border-gray-200">
+                    <div class="p-3 sm:p-4 bg-white border-t border-gray-200">
                         <form id="chatForm" class="flex space-x-2">
                             <input 
                                 type="text" 
@@ -1964,6 +1998,15 @@ app.get('/trade', (c) => {
                 content.innerHTML = '<p class="text-red-600">エラーが発生しました。もう一度お試しください。</p>';
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-sync-alt mr-1"></i>分析';
+            }
+        }
+
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+            } else {
+                menu.classList.add('hidden');
             }
         }
 
