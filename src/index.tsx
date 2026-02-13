@@ -1228,9 +1228,9 @@ app.get('/trade', (c) => {
                         type="number" 
                         id="amount" 
                         value="1" 
-                        step="1" 
-                        min="1"
-                        max="3"
+                        step="0.5" 
+                        min="0.5"
+                        max="2"
                         class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
                     />
                     <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
@@ -1239,9 +1239,9 @@ app.get('/trade', (c) => {
                 </div>
 
                 <div class="grid grid-cols-3 gap-2">
+                    <button onclick="setAmount(0.5)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300 font-bold">0.5 lot</button>
                     <button onclick="setAmount(1)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">1 lot</button>
-                    <button onclick="setAmount(2)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">2 lot</button>
-                    <button onclick="setAmount(3)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">3 lot</button>
+                    <button onclick="setAmount(2)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300 font-bold">2 lot</button>
                 </div>
             </div>
 
@@ -1643,9 +1643,9 @@ app.get('/trade', (c) => {
                 await loadUserData();
                 
                 if (profitLoss >= 0) {
-                    showNotification('profit', '利確しました！', \`+¥\${profitLoss.toLocaleString('ja-JP', {minimumFractionDigits: 2})}\`);
+                    showNotification('profit', '利確しました！', \`+¥\${Math.round(profitLoss).toLocaleString('ja-JP')}\`);
                 } else {
-                    showNotification('loss', '損切りしました', \`¥\${profitLoss.toLocaleString('ja-JP', {minimumFractionDigits: 2})}\`);
+                    showNotification('loss', '損切りしました', \`¥\${Math.round(profitLoss).toLocaleString('ja-JP')}\`);
                 }
             } catch (error) {
                 alert('決済に失敗しました');
@@ -1659,28 +1659,28 @@ app.get('/trade', (c) => {
         function increaseAmount() {
             const input = document.getElementById('amount');
             const current = parseFloat(input.value);
-            if (current < 1) {
+            if (current < 0.5) {
+                input.value = 0.5;
+            } else if (current < 1) {
                 input.value = 1;
             } else if (current < 2) {
                 input.value = 2;
-            } else if (current < 3) {
-                input.value = 3;
             } else {
-                input.value = 1; // 3の次は1に戻る
+                input.value = 0.5; // 2の次は0.5に戻る
             }
         }
 
         function decreaseAmount() {
             const input = document.getElementById('amount');
             const current = parseFloat(input.value);
-            if (current > 3) {
-                input.value = 3;
-            } else if (current > 2) {
+            if (current > 2) {
                 input.value = 2;
             } else if (current > 1) {
                 input.value = 1;
+            } else if (current > 0.5) {
+                input.value = 0.5;
             } else {
-                input.value = 3; // 1の前は3に戻る
+                input.value = 2; // 0.5の前は2に戻る
             }
         }
 
@@ -2146,7 +2146,7 @@ app.get('/ranking', (c) => {
                             </div>
                             <div class="text-right">
                                 <div class="\${profitColor} font-bold text-lg">
-                                    ¥\${user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2})}
+                                    ¥\${Math.round(user.total_profit).toLocaleString('ja-JP')}
                                 </div>
                             </div>
                         </div>
@@ -2179,7 +2179,7 @@ app.get('/ranking', (c) => {
                                 <div>
                                     <div class="font-bold text-gray-800">\${user.username}</div>
                                     <div class="text-sm \${profitColor}">
-                                        利益: ¥\${user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2})}
+                                        利益: ¥\${Math.round(user.total_profit).toLocaleString('ja-JP')}
                                     </div>
                                 </div>
                             </div>
