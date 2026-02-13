@@ -1770,23 +1770,25 @@ app.get('/trade', (c) => {
             
             try {
                 const response = await axios.get('/api/trade/ai-feedback');
-                const { feedback, stats } = response.data;
+                const data = response.data;
+                const feedback = data.feedback;
+                const stats = data.stats;
                 
                 // フィードバックを表示
                 let statsHtml = '';
                 if (stats) {
-                    statsHtml = \`
-                        <div class="mb-2 pb-2 border-b border-purple-200 text-xs">
-                            <span class="font-bold">📊 ${stats.totalTrades}回</span> | 
-                            <span class="font-bold text-green-600">勝率 ${stats.winRate}%</span> | 
-                            <span class="font-bold ${stats.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}">
-                                ${stats.totalProfit >= 0 ? '+' : ''}¥${Math.round(stats.totalProfit).toLocaleString()}
-                            </span>
-                        </div>
-                    \`;
+                    const profitClass = stats.totalProfit >= 0 ? 'text-green-600' : 'text-red-600';
+                    const profitSign = stats.totalProfit >= 0 ? '+' : '';
+                    const profitAmount = Math.round(stats.totalProfit).toLocaleString();
+                    
+                    statsHtml = '<div class="mb-2 pb-2 border-b border-purple-200 text-xs">' +
+                        '<span class="font-bold">📊 ' + stats.totalTrades + '回</span> | ' +
+                        '<span class="font-bold text-green-600">勝率 ' + stats.winRate + '%</span> | ' +
+                        '<span class="font-bold ' + profitClass + '">' + profitSign + '¥' + profitAmount + '</span>' +
+                        '</div>';
                 }
                 
-                content.innerHTML = statsHtml + \`<p class="whitespace-pre-wrap">${feedback}</p>\`;
+                content.innerHTML = statsHtml + '<p class="whitespace-pre-wrap">' + feedback + '</p>';
                 
                 // ボタンを元に戻す
                 btn.disabled = false;
