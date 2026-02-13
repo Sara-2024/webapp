@@ -201,13 +201,13 @@ export function generateSignal(candle: Candle, candleId: number, rsi: number): S
 }
 
 /**
- * 初期データ生成（過去3時間分のローソク足）
+ * 初期データ生成（過去12時間分のローソク足）
  */
-export function generateInitialCandles(count: number = 180): Candle[] {
+export function generateInitialCandles(count: number = 720): Candle[] {
   const candles: Candle[] = []
   const basePrice = 4950
   const now = Math.floor(Date.now() / 1000)
-  const startTime = now - (count * 60)  // 3時間前から
+  const startTime = now - (count * 60)  // 12時間前から
 
   let previousCandle: Candle | null = null
 
@@ -221,4 +221,43 @@ export function generateInitialCandles(count: number = 180): Candle[] {
   }
 
   return candles
+}
+
+/**
+ * 初期サインデータ生成
+ * - 12時間分のローソク足から、反転しそうなポイントにサインを生成
+ * - 1時間あたり3-5回のサイン（合計36-60回）
+ * - candlesはDB IDを含む必要がある
+ */
+export function generateInitialSignals(candles: Candle[]): Signal[] {
+  const signals: Signal[] = []
+  const totalHours = candles.length / 60  // 720本 = 12時間
+  const avgSignalsPerHour = 4  // 1時間あたり平均4回
+  
+  // サイン発生間隔（分）の配列を生成
+  const signalIntervals: number[] = []
+  let currentIndex = Math.floor(Math.random() * 20) + 10  // 最初のサインは10-30分後
+  
+  while (currentIndex < candles.length - 10) {
+    signalIntervals.push(currentIndex)
+    // 次のサインまで12-20分（ランダム）
+    currentIndex += Math.floor(Math.random() * 9) + 12
+  }
+  
+  // 各サイン発生ポイントでサインを生成
+  for (const index of signalIntervals) {
+    if (index >= 14 && candles[index] && candles[index].id) {  // RSI計算に必要な最低本数
+      const candle = candles[index]
+      const candleId = candle.id as number  // DB上の実際のID
+      
+      // RSIを取得（既に計算済みの場合）
+      const rsi = candle.rsi || 50
+      
+      // サイン生成
+      const signal = generateSignal(candle, candleId, rsi)
+      signals.push(signal)
+    }
+  }
+  
+  return signals
 }

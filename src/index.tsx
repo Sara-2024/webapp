@@ -404,13 +404,14 @@ import {
   calculateRSI, 
   shouldGenerateSignal,
   generateInitialCandles,
+  generateInitialSignals,
   type Candle,
   type Signal
 } from './gold10'
 
-// 過去3時間分のローソク足データを取得
+// 過去12時間分のローソク足データを取得
 app.get('/api/gold10/candles', async (c) => {
-  const hoursParam = c.req.query('hours') || '3'
+  const hoursParam = c.req.query('hours') || '12'
   const hours = parseInt(hoursParam)
   const limit = hours * 60  // 1分足なので、時間 × 60本
   
@@ -549,8 +550,8 @@ app.post('/api/gold10/initialize', async (c) => {
     return c.json({ error: '既にデータが存在します', count: existingCount.count }, 400)
   }
 
-  // 過去3時間分（180本）のローソク足を生成
-  const initialCandles = generateInitialCandles(180)
+  // 過去12時間分（720本）のローソク足を生成
+  const initialCandles = generateInitialCandles(720)
 
   // バッチでDBに挿入
   for (const candle of initialCandles) {
@@ -580,12 +581,35 @@ app.post('/api/gold10/initialize', async (c) => {
     await c.env.DB.prepare(`
       UPDATE gold10_candles SET rsi = ? WHERE id = ?
     `).bind(rsi, candlesArray[i].id).run()
+    
+    // RSI更新後、candlesArrayにも反映
+    candlesArray[i].rsi = rsi
+  }
+
+  // 初期サインを生成
+  const initialSignals = generateInitialSignals(candlesArray)
+  
+  // サインをDBに保存
+  for (const signal of initialSignals) {
+    await c.env.DB.prepare(`
+      INSERT INTO gold10_signals (candle_id, timestamp, type, price, target_price, success, rsi)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      signal.candle_id,
+      signal.timestamp,
+      signal.type,
+      signal.price,
+      signal.target_price,
+      signal.success,
+      signal.rsi
+    ).run()
   }
 
   return c.json({ 
     success: true, 
     message: '初期データを生成しました',
-    candleCount: initialCandles.length
+    candleCount: initialCandles.length,
+    signalCount: initialSignals.length
   })
 })
 
@@ -1009,7 +1033,7 @@ app.get('/trade', (c) => {
                 </h2>
                 <p class="text-sm text-gray-600">
                     <i class="fas fa-info-circle mr-1"></i>
-                    過去3時間分の1分足ローソク足チャート（全ユーザー共通）
+                    過去12時間分の1分足ローソク足チャート（全ユーザー共通）
                 </p>
             </div>
             
@@ -1251,12 +1275,12 @@ app.get('/trade', (c) => {
         // GOLD10データを読み込んでチャートに表示
         async function loadGold10Chart() {
             try {
-                // 過去3時間分のローソク足データを取得
-                const candlesResponse = await axios.get('/api/gold10/candles?hours=3');
+                // 過去12時間分のローソク足データを取得
+                const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
                 const candles = candlesResponse.data;
 
                 // サインデータを取得
-                const signalsResponse = await axios.get('/api/gold10/signals?hours=3');
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
                 const signals = signalsResponse.data;
 
                 // ローソク足データをLightweight Charts形式に変換
