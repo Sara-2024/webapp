@@ -1084,11 +1084,6 @@ app.get('/trade', (c) => {
                 </h3>
                 <div id="chartContainer"></div>
             </div>
-            
-            <!-- RSIチャート -->
-            <div class="bg-white rounded-lg shadow-md p-4">
-                <div id="rsiContainer"></div>
-            </div>
         </div>
 
         <!-- 右側: 取引UI -->
@@ -1213,8 +1208,6 @@ app.get('/trade', (c) => {
         // ========== GOLD10チャート関連 ==========
         let chart = null;
         let candlestickSeries = null;
-        let rsiChart = null;
-        let rsiLineSeries = null;
         let signalMarkers = [];
         
         // Lightweight Chartsの初期化
@@ -1248,70 +1241,11 @@ app.get('/trade', (c) => {
                 wickDownColor: '#ef5350',
             });
 
-            // RSIチャート
-            rsiChart = LightweightCharts.createChart(document.getElementById('rsiContainer'), {
-                width: document.getElementById('rsiContainer').clientWidth,
-                height: 150,
-                layout: {
-                    background: { color: '#ffffff' },
-                    textColor: '#333',
-                },
-                grid: {
-                    vertLines: { color: '#f0f0f0' },
-                    horzLines: { color: '#f0f0f0' },
-                },
-                timeScale: {
-                    timeVisible: true,
-                    secondsVisible: false,
-                },
-            });
-
-            rsiLineSeries = rsiChart.addLineSeries({
-                color: '#2962FF',
-                lineWidth: 2,
-            });
-
-            // RSIの70と30のライン
-            const rsiUpperLine = rsiChart.addLineSeries({
-                color: '#ff6b6b',
-                lineWidth: 1,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-            });
-            
-            const rsiLowerLine = rsiChart.addLineSeries({
-                color: '#4ecdc4',
-                lineWidth: 1,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-            });
-
             // ウィンドウリサイズ対応
             window.addEventListener('resize', () => {
                 chart.applyOptions({ 
                     width: document.getElementById('chartContainer').clientWidth 
                 });
-                rsiChart.applyOptions({ 
-                    width: document.getElementById('rsiContainer').clientWidth 
-                });
-            });
-
-            // 価格チャートのみをマスターとして、RSIチャートに一方向で同期
-            // 価格チャートのタイムスケール変更をRSIチャートに同期
-            chart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
-                if (timeRange) {
-                    rsiChart.timeScale().setVisibleRange(timeRange);
-                }
-            });
-
-            // クロスヘア同期（価格チャート → RSIチャート）のみ
-            chart.subscribeCrosshairMove((param) => {
-                if (!param.time) {
-                    return;
-                }
-                rsiChart.setCrosshairPosition(
-                    param.point?.x ?? 0,
-                    param.time,
-                    rsiLineSeries
-                );
             });
         }
 
@@ -1335,19 +1269,11 @@ app.get('/trade', (c) => {
                     close: c.close
                 }));
 
-                // RSIデータを抽出
-                const rsiData = candles
-                    .filter(c => c.rsi !== null)
-                    .map(c => ({
-                        time: c.timestamp,
-                        value: c.rsi
-                    }));
-
                 // チャートにデータをセット
                 if (candleData.length > 0) {
                     candlestickSeries.setData(candleData);
                     
-                    // 最新価格を表示
+                    // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
                     if (latestCandle) {
                         document.getElementById('gold10Price').textContent = 
@@ -1365,10 +1291,6 @@ app.get('/trade', (c) => {
                             rsiEl.className = 'text-2xl font-bold text-blue-600';
                         }
                     }
-                }
-
-                if (rsiData.length > 0) {
-                    rsiLineSeries.setData(rsiData);
                 }
 
                 // サインをマーカーとして表示
@@ -1405,19 +1327,21 @@ app.get('/trade', (c) => {
                         close: candle.close
                     });
 
-                    // RSI更新
-                    if (candle.rsi !== null) {
-                        rsiLineSeries.update({
-                            time: candle.timestamp,
-                            value: candle.rsi
-                        });
-                    }
-
-                    // 現在価格表示を更新
+                    // 現在価格とRSI表示を更新
                     document.getElementById('gold10Price').textContent = 
                         '$' + candle.close.toFixed(2);
                     document.getElementById('gold10RSI').textContent = 
                         candle.rsi ? candle.rsi.toFixed(1) : '--';
+                    
+                    // RSI色分け
+                    const rsiEl = document.getElementById('gold10RSI');
+                    if (candle.rsi >= 70) {
+                        rsiEl.className = 'text-2xl font-bold text-red-600';
+                    } else if (candle.rsi <= 30) {
+                        rsiEl.className = 'text-2xl font-bold text-green-600';
+                    } else {
+                        rsiEl.className = 'text-2xl font-bold text-blue-600';
+                    }
                     
                     // currentPriceもGOLD10価格に更新
                     currentPrice = candle.close;
