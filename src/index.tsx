@@ -414,7 +414,11 @@ app.post('/api/trade/auto-close-expired', async (c) => {
 
   try {
     // 15分以上経過したオープンポジションを取得
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    // SQLiteフォーマットに変換: 'YYYY-MM-DD HH:MM:SS' (TではなくスペースでISOのZを削除)
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ')
+      .substring(0, 19)  // ミリ秒とZを削除
     
     const { results: expiredTrades } = await c.env.DB.prepare(`
       SELECT * FROM trades 
