@@ -647,6 +647,18 @@ app.get('/trade', (c) => {
     <title>GOLD取引</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @keyframes slideIn {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(-100%); opacity: 0; }
+        }
+        .notification-enter { animation: slideIn 0.3s ease-out; }
+        .notification-exit { animation: slideOut 0.3s ease-out; }
+    </style>
 </head>
 <body class="bg-gray-100">
     <!-- ヘッダー -->
@@ -663,6 +675,19 @@ app.get('/trade', (c) => {
             </nav>
         </div>
     </header>
+
+    <!-- 通知ポップアップ -->
+    <div id="notification" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 hidden">
+        <div class="bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4">
+            <div class="flex items-center justify-center">
+                <i id="notificationIcon" class="fas fa-check-circle text-5xl mr-4"></i>
+                <div>
+                    <h3 id="notificationTitle" class="text-2xl font-bold mb-1"></h3>
+                    <p id="notificationMessage" class="text-gray-600"></p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="container mx-auto p-4 max-w-md">
         <!-- 残高表示 -->
@@ -732,13 +757,8 @@ app.get('/trade', (c) => {
             </button>
         </div>
 
-        <!-- 購入ボタン（決済用） -->
-        <button onclick="closeAllPositions()" id="closeButton" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-4 rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-            購入
-        </button>
-
         <!-- オープンポジション表示 -->
-        <div id="openPositions" class="mt-4 space-y-2"></div>
+        <div id="openPositions" class="mt-4 space-y-3"></div>
 
         <!-- AIアドバイス -->
         <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mt-4 rounded">
@@ -752,12 +772,38 @@ app.get('/trade', (c) => {
         </div>
 
         <!-- オンラインチャット -->
-        <div class="bg-white rounded-lg shadow-md p-4 mt-4">
-            <button onclick="window.location.href='/chat'" class="w-full flex items-center justify-center text-gray-700 hover:text-gray-900">
-                <i class="fas fa-comments mr-2"></i>
-                <span>オンラインチャット</span>
-                <i class="fas fa-chevron-down ml-2"></i>
+        <div class="bg-white rounded-lg shadow-md mt-4">
+            <button onclick="toggleChat()" class="w-full flex items-center justify-between p-4 text-gray-700 hover:text-gray-900">
+                <div class="flex items-center">
+                    <i class="fas fa-comments mr-2"></i>
+                    <span>オンラインチャット</span>
+                </div>
+                <i id="chatToggleIcon" class="fas fa-chevron-down"></i>
             </button>
+            
+            <!-- チャットエリア -->
+            <div id="chatArea" class="hidden border-t border-gray-200">
+                <div id="chatMessages" class="h-64 overflow-y-auto p-4 space-y-2 bg-gray-50">
+                    <p class="text-center text-gray-500 text-sm">読み込み中...</p>
+                </div>
+                <div class="p-4 bg-white border-t border-gray-200">
+                    <form id="chatForm" class="flex space-x-2">
+                        <input 
+                            type="text" 
+                            id="chatInput" 
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-sm"
+                            placeholder="メッセージを入力..."
+                            required
+                        />
+                        <button 
+                            type="submit"
+                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-bold text-sm"
+                        >
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -765,11 +811,50 @@ app.get('/trade', (c) => {
     <script>
         let currentPrice = 0;
         let openPositions = [];
+        let currentUserId = null;
+        let chatOpen = false;
+
+        // 通知表示
+        function showNotification(type, title, message) {
+            const notification = document.getElementById('notification');
+            const icon = document.getElementById('notificationIcon');
+            const titleEl = document.getElementById('notificationTitle');
+            const messageEl = document.getElementById('notificationMessage');
+            const container = notification.querySelector('div');
+
+            // タイプに応じてスタイル変更
+            if (type === 'entry') {
+                container.className = 'bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4 border-green-500';
+                icon.className = 'fas fa-chart-line text-5xl mr-4 text-green-500';
+            } else if (type === 'profit') {
+                container.className = 'bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4 border-blue-500';
+                icon.className = 'fas fa-check-circle text-5xl mr-4 text-blue-500';
+            } else if (type === 'loss') {
+                container.className = 'bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4 border-red-500';
+                icon.className = 'fas fa-times-circle text-5xl mr-4 text-red-500';
+            }
+
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+
+            notification.classList.remove('hidden');
+            notification.classList.add('notification-enter');
+
+            setTimeout(() => {
+                notification.classList.remove('notification-enter');
+                notification.classList.add('notification-exit');
+                setTimeout(() => {
+                    notification.classList.add('hidden');
+                    notification.classList.remove('notification-exit');
+                }, 300);
+            }, 2500);
+        }
 
         async function loadUserData() {
             try {
                 const response = await axios.get('/api/auth/me');
                 const user = response.data;
+                currentUserId = user.id;
                 document.getElementById('balance').textContent = '¥' + user.balance.toLocaleString('ja-JP', {minimumFractionDigits: 2});
                 const profitElement = document.getElementById('totalProfit');
                 profitElement.textContent = '¥' + user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2});
@@ -802,33 +887,49 @@ app.get('/trade', (c) => {
 
         function displayOpenPositions() {
             const container = document.getElementById('openPositions');
-            const closeButton = document.getElementById('closeButton');
             
             if (openPositions.length === 0) {
                 container.innerHTML = '';
-                closeButton.disabled = true;
                 return;
             }
 
-            closeButton.disabled = false;
             container.innerHTML = openPositions.map(pos => {
                 const pl = pos.type === 'BUY' 
                     ? (currentPrice - pos.entry_price) * pos.amount * 152.96
                     : (pos.entry_price - currentPrice) * pos.amount * 152.96;
                 const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
-                const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300';
                 
                 return \`
-                    <div class="bg-white border border-gray-200 rounded-lg p-3">
-                        <div class="flex justify-between items-center">
-                            <span class="px-2 py-1 rounded text-sm font-bold \${typeColor}">
-                                \${pos.type === 'BUY' ? '買い' : '売り'}
-                            </span>
-                            <span class="text-sm text-gray-600">\${pos.amount} lot</span>
-                            <span class="\${plColor} font-bold">¥\${pl.toLocaleString('ja-JP', {minimumFractionDigits: 2})}</span>
+                    <div class="bg-white border-2 \${typeColor.split(' ')[2]} rounded-lg p-4 shadow-md">
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex-1">
+                                <span class="px-3 py-1 rounded-full text-sm font-bold \${typeColor}">
+                                    \${pos.type === 'BUY' ? '買い' : '売り'}
+                                </span>
+                                <span class="ml-2 text-gray-600 font-medium">\${pos.amount} lot</span>
+                            </div>
+                            <button 
+                                onclick="closePosition(\${pos.id})"
+                                class="bg-gray-800 hover:bg-gray-900 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold transition"
+                                title="決済"
+                            >
+                                ✕
+                            </button>
                         </div>
-                        <div class="text-xs text-gray-500 mt-1">
-                            エントリー価格: $\${pos.entry_price.toFixed(2)}
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-sm text-gray-600">
+                                <span>エントリー価格:</span>
+                                <span class="font-mono">$\${pos.entry_price.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between text-sm text-gray-600">
+                                <span>現在価格:</span>
+                                <span class="font-mono">$\${currentPrice.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between items-center pt-2 border-t border-gray-200">
+                                <span class="font-bold text-gray-700">損益:</span>
+                                <span class="\${plColor} font-bold text-xl">¥\${pl.toLocaleString('ja-JP', {minimumFractionDigits: 2})}</span>
+                            </div>
                         </div>
                     </div>
                 \`;
@@ -843,24 +944,30 @@ app.get('/trade', (c) => {
             }
 
             try {
-                await axios.post('/api/trade/open', { type, amount });
+                const response = await axios.post('/api/trade/open', { type, amount });
                 await loadOpenPositions();
                 await loadUserData();
+                
+                const typeName = type === 'BUY' ? '買い' : '売り';
+                showNotification('entry', 'エントリーしました！', \`\${typeName}ポジション \${amount} lot を開きました\`);
             } catch (error) {
                 alert('エラー: ' + (error.response?.data?.error || '取引に失敗しました'));
             }
         }
 
-        async function closeAllPositions() {
-            if (openPositions.length === 0) return;
-
+        async function closePosition(tradeId) {
             try {
-                for (const pos of openPositions) {
-                    await axios.post(\`/api/trade/close/\${pos.id}\`);
-                }
+                const response = await axios.post(\`/api/trade/close/\${tradeId}\`);
+                const profitLoss = response.data.profitLoss;
+                
                 await loadOpenPositions();
                 await loadUserData();
-                alert('ポジションを決済しました');
+                
+                if (profitLoss >= 0) {
+                    showNotification('profit', '利確しました！', \`+¥\${profitLoss.toLocaleString('ja-JP', {minimumFractionDigits: 2})}\`);
+                } else {
+                    showNotification('loss', '損切りしました', \`¥\${profitLoss.toLocaleString('ja-JP', {minimumFractionDigits: 2})}\`);
+                }
             } catch (error) {
                 alert('決済に失敗しました');
             }
@@ -885,10 +992,77 @@ app.get('/trade', (c) => {
 
         function toggleReset() {
             if (confirm('残高を初期値（¥1,000,000）にリセットしますか？\\nこの操作は取り消せません。')) {
-                // TODO: API実装
                 alert('この機能は現在実装中です');
             }
         }
+
+        // チャット機能
+        function toggleChat() {
+            chatOpen = !chatOpen;
+            const chatArea = document.getElementById('chatArea');
+            const icon = document.getElementById('chatToggleIcon');
+            
+            if (chatOpen) {
+                chatArea.classList.remove('hidden');
+                icon.className = 'fas fa-chevron-up';
+                loadChatMessages();
+            } else {
+                chatArea.classList.add('hidden');
+                icon.className = 'fas fa-chevron-down';
+            }
+        }
+
+        async function loadChatMessages() {
+            try {
+                const response = await axios.get('/api/chat/messages');
+                const messages = response.data;
+                const container = document.getElementById('chatMessages');
+                
+                if (messages.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 text-sm">メッセージがありません</p>';
+                    return;
+                }
+
+                container.innerHTML = messages.map(msg => {
+                    const isMyMessage = msg.user_id === currentUserId;
+                    const time = new Date(msg.created_at).toLocaleString('ja-JP', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    return \`
+                        <div class="\${isMyMessage ? 'flex justify-end' : 'flex justify-start'}">
+                            <div class="\${isMyMessage ? 'bg-yellow-100 border-yellow-300' : 'bg-gray-100 border-gray-300'} max-w-[80%] px-3 py-2 rounded-lg border text-sm">
+                                <div class="text-xs text-gray-600 mb-1">\${msg.username} · \${time}</div>
+                                <div class="text-gray-800">\${msg.message}</div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+
+                container.scrollTop = container.scrollHeight;
+            } catch (error) {
+                console.error('メッセージ取得エラー:', error);
+            }
+        }
+
+        document.getElementById('chatForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            try {
+                await axios.post('/api/chat/messages', { message });
+                input.value = '';
+                await loadChatMessages();
+            } catch (error) {
+                alert('メッセージ送信に失敗しました');
+            }
+        });
 
         async function logout() {
             await axios.post('/api/auth/logout');
@@ -904,9 +1078,16 @@ app.get('/trade', (c) => {
         setInterval(() => {
             updateGoldPrice();
             if (openPositions.length > 0) {
-                displayOpenPositions(); // 損益をリアルタイム更新
+                displayOpenPositions();
             }
         }, 3000);
+
+        // チャットが開いている場合は5秒ごとに更新
+        setInterval(() => {
+            if (chatOpen) {
+                loadChatMessages();
+            }
+        }, 5000);
     </script>
 </body>
 </html>
