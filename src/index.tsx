@@ -524,8 +524,10 @@ app.get('/', (c) => {
             </button>
         </form>
 
-        <div class="mt-8 text-center text-xs text-gray-500">
-            <a href="/admin-login" class="hover:text-gray-700">・</a>
+        <div class="mt-8 text-center">
+            <a href="/admin-login" class="text-sm text-gray-500 hover:text-gray-700 transition">
+                管理者ログイン
+            </a>
         </div>
     </div>
 
