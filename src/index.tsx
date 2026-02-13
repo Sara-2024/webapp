@@ -2099,10 +2099,11 @@ app.get('/mypage', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-user mr-2"></i>マイページ</h1>
-            <nav class="flex space-x-4">
+            <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-user mr-1 sm:mr-2"></i>マイページ</h1>
+            <!-- PC用ナビゲーション -->
+            <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
@@ -2110,6 +2111,19 @@ app.get('/mypage', (c) => {
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
                 <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
             </nav>
+            <!-- スマホ用メニューボタン -->
+            <button onclick="toggleMobileMenu()" class="md:hidden text-white">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        <!-- スマホ用メニュー -->
+        <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
+            <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
+            <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
+            <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
+            <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
+            <button onclick="logout()" class="block w-full text-left py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-sign-out-alt mr-2"></i>ログアウト</button>
         </div>
     </header>
 
@@ -2248,6 +2262,15 @@ app.get('/mypage', (c) => {
             }
         }
 
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
         async function logout() {
             await axios.post('/api/auth/logout');
             window.location.href = '/';
@@ -2274,10 +2297,11 @@ app.get('/ranking', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-trophy mr-2"></i>ランキング</h1>
-            <nav class="flex space-x-4">
+            <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-trophy mr-1 sm:mr-2"></i>ランキング</h1>
+            <!-- PC用ナビゲーション -->
+            <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
@@ -2285,6 +2309,19 @@ app.get('/ranking', (c) => {
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
                 <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
             </nav>
+            <!-- スマホ用メニューボタン -->
+            <button onclick="toggleMobileMenu()" class="md:hidden text-white">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        <!-- スマホ用メニュー -->
+        <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
+            <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
+            <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
+            <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
+            <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
+            <button onclick="logout()" class="block w-full text-left py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-sign-out-alt mr-2"></i>ログアウト</button>
         </div>
     </header>
 
@@ -2437,6 +2474,15 @@ app.get('/ranking', (c) => {
             }
         }
 
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
         async function logout() {
             await axios.post('/api/auth/logout');
             window.location.href = '/';
@@ -2463,16 +2509,33 @@ app.get('/videos', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-video mr-2"></i>動画教材</h1>
-            <nav class="flex space-x-4">
+            <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-video mr-1 sm:mr-2"></i>動画教材</h1>
+            <!-- PC用ナビゲーション -->
+            <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
                 <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+            <!-- スマホ用メニューボタン -->
+            <button onclick="toggleMobileMenu()" class="md:hidden text-white">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        <!-- スマホ用メニュー -->
+        <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
+            <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
+            <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
+            <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
+            <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
+            <button onclick="logout()" class="block w-full text-left py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-sign-out-alt mr-2"></i>ログアウト</button>
+        </div>
+    </header>
             </nav>
         </div>
     </header>
@@ -2530,6 +2593,15 @@ app.get('/videos', (c) => {
             }
         }
 
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
         async function logout() {
             await axios.post('/api/auth/logout');
             window.location.href = '/';
@@ -2555,16 +2627,33 @@ app.get('/chat', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-comments mr-2"></i>オンラインチャット</h1>
-            <nav class="flex space-x-4">
+            <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-comments mr-1 sm:mr-2"></i>オンラインチャット</h1>
+            <!-- PC用ナビゲーション -->
+            <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
                 <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+            <!-- スマホ用メニューボタン -->
+            <button onclick="toggleMobileMenu()" class="md:hidden text-white">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+        </div>
+        <!-- スマホ用メニュー -->
+        <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
+            <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
+            <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
+            <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
+            <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
+            <button onclick="logout()" class="block w-full text-left py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-sign-out-alt mr-2"></i>ログアウト</button>
+        </div>
+    </header>
             </nav>
         </div>
     </header>
@@ -2662,6 +2751,15 @@ app.get('/chat', (c) => {
                 alert('メッセージ送信に失敗しました');
             }
         });
+
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
 
         async function logout() {
             await axios.post('/api/auth/logout');
