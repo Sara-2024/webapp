@@ -1296,6 +1296,45 @@ app.get('/trade', (c) => {
                     width: document.getElementById('rsiContainer').clientWidth 
                 });
             });
+
+            // チャート間の同期設定
+            // 価格チャートのタイムスケール変更をRSIチャートに同期
+            chart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
+                if (timeRange) {
+                    rsiChart.timeScale().setVisibleRange(timeRange);
+                }
+            });
+
+            // RSIチャートのタイムスケール変更を価格チャートに同期
+            rsiChart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
+                if (timeRange) {
+                    chart.timeScale().setVisibleRange(timeRange);
+                }
+            });
+
+            // クロスヘア同期（価格チャート → RSIチャート）
+            chart.subscribeCrosshairMove((param) => {
+                if (!param.time) {
+                    return;
+                }
+                rsiChart.setCrosshairPosition(
+                    param.point?.x ?? 0,
+                    param.time,
+                    rsiLineSeries
+                );
+            });
+
+            // クロスヘア同期（RSIチャート → 価格チャート）
+            rsiChart.subscribeCrosshairMove((param) => {
+                if (!param.time) {
+                    return;
+                }
+                chart.setCrosshairPosition(
+                    param.point?.x ?? 0,
+                    param.time,
+                    candlestickSeries
+                );
+            });
         }
 
         // GOLD10データを読み込んでチャートに表示
