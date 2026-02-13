@@ -534,6 +534,22 @@ app.get('/api/trade/ai-feedback', async (c) => {
       ? ((sellTrades.filter((t: any) => t.profit_loss > 0).length / sellTrades.length) * 100).toFixed(1)
       : 0
 
+    // 1日あたりの取引数を計算
+    const dates = [...new Set(trades.map((t: any) => new Date(t.exit_time).toDateString()))]
+    const tradesPerDay = (totalTrades / dates.length).toFixed(1)
+
+    // 負けトレードの分析
+    const lossTradePrices = trades
+      .filter((t: any) => t.profit_loss <= 0)
+      .map((t: any) => ({ entry: t.entry_price, exit: t.exit_price, type: t.type }))
+
+    // 直近のサイン情報を取得
+    const { results: recentSignals } = await c.env.DB.prepare(`
+      SELECT timestamp, type, price FROM gold10_signals
+      ORDER BY timestamp DESC
+      LIMIT 10
+    `).all()
+
     // ChatGPT APIを呼び出してフィードバックを生成
     const apiKey = c.env.OPENAI_API_KEY
     if (!apiKey) {
@@ -542,23 +558,36 @@ app.get('/api/trade/ai-feedback', async (c) => {
       })
     }
 
-    const prompt = `あなたはプロのトレーディングコーチです。以下の取引データを分析して、具体的で実践的な改善案を3つ提案してください。
+    const prompt = `あなたはプロのトレーディングコーチです。以下の取引データを分析して、具体的で実践的なフィードバックを3〜4つ提供してください。
 
 【取引統計】
 - 総取引数: ${totalTrades}回
-- 勝率: ${winRate}%
+- 勝率: ${winRate}% (目標: 60%)
 - 勝ち: ${winTrades}回 / 負け: ${lossTrades}回
 - 総損益: ¥${totalProfit.toLocaleString()}
 - 平均損益: ¥${avgProfit}
-- 買いの勝率: ${buyWinRate}%
-- 売りの勝率: ${sellWinRate}%
+- 買いの勝率: ${buyWinRate}% / 売りの勝率: ${sellWinRate}%
+- 1日あたりの取引数: ${tradesPerDay}回 (目標: 2回以上)
 
-【要件】
-1. 日本語で回答してください
-2. 150文字以内で簡潔に
-3. 具体的な数字を使った改善案を提示
-4. 励ましの言葉を含める
-5. 絵文字を1〜2個使用`
+【フィードバック要件】
+1. **RSI分析**: RSIを意識した取引ができているか？（RSI 36-60が理想的）
+2. **取引頻度**: 1日2回以上取引できているか？できていない場合は励ます
+3. **負けパターン分析**: 負けているトレードがトレンドの強い相場だったか分析
+4. **サイン活用**: GOLD10のサインを活用しているか？活用していない場合は少し厳しく指摘
+5. **勝率目標**: 60%の勝率を目指すための具体的なアドバイス
+
+【出力形式】
+- 3〜4つの具体的なフィードバック
+- 各フィードバックは30〜50文字程度
+- 絵文字を適度に使用（各項目1つ程度）
+- ポジティブな励ましと改善点のバランスを取る
+- サインを使っていない場合は「⚠️」を使って少し厳しく指摘
+
+例:
+📊 勝率${winRate}%は目標60%に${parseFloat(winRate) >= 60 ? '到達！' : 'もう少し！'}RSI 36-60での取引を意識しましょう
+${parseFloat(tradesPerDay) >= 2 ? '✨ 1日2回以上の取引ができています！' : '⏰ 1日2回以上の取引を目指しましょう'}
+📉 負けトレードの${Math.round(lossTrades * 0.6)}件はトレンドが強すぎた可能性あり
+⚠️ サインを活用した取引を心がけてください！精度が向上します`
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -569,11 +598,11 @@ app.get('/api/trade/ai-feedback', async (c) => {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'あなたはプロのトレーディングコーチです。' },
+          { role: 'system', content: 'あなたはプロのトレーディングコーチです。ユーザーの成長を促すため、具体的で実践的なアドバイスを提供します。' },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 300,
-        temperature: 0.7
+        max_tokens: 500,
+        temperature: 0.8
       })
     })
 
@@ -587,7 +616,8 @@ app.get('/api/trade/ai-feedback', async (c) => {
           winRate,
           totalProfit,
           buyWinRate,
-          sellWinRate
+          sellWinRate,
+          tradesPerDay
         }
       })
     }
@@ -2216,6 +2246,14 @@ app.get('/ranking', (c) => {
         <!-- 取引数ランキング -->
         <div id="tradesRanking" class="bg-white rounded-lg shadow-md p-6 hidden">
             <h2 class="text-2xl font-bold mb-4">取引数ランキング</h2>
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-red-500 text-xl mr-3"></i>
+                    <p class="text-sm text-red-700">
+                        <strong>重要：</strong>連打系の取引が確認できた場合にはアカウント停止とします。
+                    </p>
+                </div>
+            </div>
             <div id="tradesList" class="space-y-2">
                 <p class="text-center text-gray-500 py-4">読み込み中...</p>
             </div>
