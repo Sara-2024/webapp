@@ -796,7 +796,7 @@ app.get('/trade', (c) => {
                     id="amount" 
                     value="0.3" 
                     step="0.1" 
-                    min="0.1"
+                    min="0.3"
                     class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
                 />
                 <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
@@ -804,8 +804,7 @@ app.get('/trade', (c) => {
                 </button>
             </div>
 
-            <div class="grid grid-cols-4 gap-2">
-                <button onclick="setAmount(0.1)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">0.1</button>
+            <div class="grid grid-cols-3 gap-2">
                 <button onclick="setAmount(0.3)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">0.3</button>
                 <button onclick="setAmount(0.5)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">0.5</button>
                 <button onclick="setAmount(1.0)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">1</button>
@@ -922,7 +921,7 @@ app.get('/trade', (c) => {
                 currentUserId = user.id;
                 document.getElementById('balance').textContent = '¥' + user.balance.toLocaleString('ja-JP', {minimumFractionDigits: 2});
                 const profitElement = document.getElementById('totalProfit');
-                profitElement.textContent = '¥' + user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                profitElement.textContent = '¥' + Math.round(user.total_profit).toLocaleString('ja-JP');
                 profitElement.className = user.total_profit >= 0 ? 'text-xl font-bold text-green-600' : 'text-xl font-bold text-red-600';
             } catch (error) {
                 window.location.href = '/';
@@ -993,7 +992,7 @@ app.get('/trade', (c) => {
                             </div>
                             <div class="flex justify-between items-center pt-2 border-t border-gray-200">
                                 <span class="font-bold text-gray-700">損益:</span>
-                                <span class="\${plColor} font-bold text-xl">¥\${pl.toLocaleString('ja-JP', {minimumFractionDigits: 2})}</span>
+                                <span class="\${plColor} font-bold text-xl">¥\${Math.round(pl).toLocaleString('ja-JP')}</span>
                             </div>
                         </div>
                     </div>
@@ -1044,14 +1043,29 @@ app.get('/trade', (c) => {
 
         function increaseAmount() {
             const input = document.getElementById('amount');
-            input.value = (parseFloat(input.value) + 0.1).toFixed(1);
+            const current = parseFloat(input.value);
+            if (current < 0.3) {
+                input.value = 0.3;
+            } else if (current < 0.5) {
+                input.value = 0.5;
+            } else if (current < 1.0) {
+                input.value = 1.0;
+            } else {
+                input.value = 0.3;
+            }
         }
 
         function decreaseAmount() {
             const input = document.getElementById('amount');
-            const newValue = parseFloat(input.value) - 0.1;
-            if (newValue >= 0.1) {
-                input.value = newValue.toFixed(1);
+            const current = parseFloat(input.value);
+            if (current > 1.0) {
+                input.value = 1.0;
+            } else if (current > 0.5) {
+                input.value = 0.5;
+            } else if (current > 0.3) {
+                input.value = 0.3;
+            } else {
+                input.value = 1.0;
             }
         }
 
