@@ -124,20 +124,20 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
 
 /**
  * 反転サインを生成すべきか判定
- * - 1時間に約2.7回のサイン発生
- * - つまり17-28分に1回程度
+ * - 30本のローソク足に1回のサイン発生（1時間に2回）
+ * - つまり25-35分に1回程度
  */
 export function shouldGenerateSignal(lastSignalTime: number | null): boolean {
   const now = Math.floor(Date.now() / 1000)
   
   if (!lastSignalTime) {
-    // 初回は15%の確率で生成
-    return Math.random() < 0.15
+    // 初回は3%の確率で生成（30本に1回）
+    return Math.random() < 0.03
   }
 
   const timeSinceLastSignal = now - lastSignalTime
-  const minInterval = 17 * 60  // 17分
-  const maxInterval = 28 * 60  // 28分
+  const minInterval = 25 * 60  // 25分
+  const maxInterval = 35 * 60  // 35分
 
   // 最小間隔を超えていない場合は生成しない
   if (timeSinceLastSignal < minInterval) {
@@ -149,7 +149,7 @@ export function shouldGenerateSignal(lastSignalTime: number | null): boolean {
     return true
   }
 
-  // 17-28分の間は徐々に確率が上がる
+  // 25-35分の間は徐々に確率が上がる
   const probability = (timeSinceLastSignal - minInterval) / (maxInterval - minInterval)
   return Math.random() < probability
 }
