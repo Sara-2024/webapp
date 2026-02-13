@@ -1297,7 +1297,7 @@ app.get('/trade', (c) => {
                 });
             });
 
-            // チャート間の同期設定
+            // 価格チャートのみをマスターとして、RSIチャートに一方向で同期
             // 価格チャートのタイムスケール変更をRSIチャートに同期
             chart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
                 if (timeRange) {
@@ -1305,14 +1305,7 @@ app.get('/trade', (c) => {
                 }
             });
 
-            // RSIチャートのタイムスケール変更を価格チャートに同期
-            rsiChart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
-                if (timeRange) {
-                    chart.timeScale().setVisibleRange(timeRange);
-                }
-            });
-
-            // クロスヘア同期（価格チャート → RSIチャート）
+            // クロスヘア同期（価格チャート → RSIチャート）のみ
             chart.subscribeCrosshairMove((param) => {
                 if (!param.time) {
                     return;
@@ -1321,18 +1314,6 @@ app.get('/trade', (c) => {
                     param.point?.x ?? 0,
                     param.time,
                     rsiLineSeries
-                );
-            });
-
-            // クロスヘア同期（RSIチャート → 価格チャート）
-            rsiChart.subscribeCrosshairMove((param) => {
-                if (!param.time) {
-                    return;
-                }
-                chart.setCrosshairPosition(
-                    param.point?.x ?? 0,
-                    param.time,
-                    candlestickSeries
                 );
             });
         }
