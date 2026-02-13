@@ -1466,6 +1466,7 @@ app.get('/trade', (c) => {
                     // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
                     if (latestCandle) {
+                        currentPrice = latestCandle.close;  // currentPriceを更新
                         document.getElementById('gold10Price').textContent = 
                             '$' + latestCandle.close.toFixed(2);
                         document.getElementById('gold10RSI').textContent = 
@@ -1885,6 +1886,9 @@ app.get('/trade', (c) => {
             // GOLD10チャートを初期化
             initializeCharts();
             await loadGold10Chart();
+            // 初期価格を取得
+            await updateGoldPrice();
+            // ポジション表示（currentPriceが更新された後）
             await loadOpenPositions();
         })();
         
