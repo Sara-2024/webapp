@@ -26,7 +26,8 @@
 
 ## URL
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
-- **本番環境**: デプロイ後に更新
+- **本番環境**: https://5e652ab1.webapp-303.pages.dev
+- **管理者ページ**: https://5e652ab1.webapp-303.pages.dev/admin-login
 
 ## Twelve Data API設定
 
