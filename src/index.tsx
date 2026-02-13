@@ -1190,29 +1190,10 @@ app.get('/trade', (c) => {
             
             <!-- ローソク足チャート -->
             <div class="bg-white rounded-lg shadow-md p-4 mb-4">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold text-gray-700">
-                        <i class="fas fa-chart-line mr-2"></i>価格チャート
-                    </h3>
-                    <div class="flex space-x-2">
-                        <button 
-                            id="trendlineBtn" 
-                            onclick="toggleTrendlineTool()"
-                            class="px-3 py-1 rounded-lg border-2 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white transition flex items-center text-sm font-bold"
-                            title="トレンドライン描画"
-                        >
-                            <i class="fas fa-chart-line mr-1"></i>ライン
-                        </button>
-                        <button 
-                            onclick="clearTrendlines()"
-                            class="px-3 py-1 rounded-lg border-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition flex items-center text-sm font-bold"
-                            title="すべてのラインを削除"
-                        >
-                            <i class="fas fa-trash mr-1"></i>削除
-                        </button>
-                    </div>
-                </div>
-                <div id="chartContainer" style="position: relative;"></div>
+                <h3 class="text-lg font-bold mb-2 text-gray-700">
+                    <i class="fas fa-chart-line mr-2"></i>価格チャート
+                </h3>
+                <div id="chartContainer"></div>
             </div>
         </div>
 
@@ -1347,11 +1328,6 @@ app.get('/trade', (c) => {
         let candlestickSeries = null;
         let signalMarkers = [];
         
-        // トレンドライン描画関連
-        let trendlineMode = false;
-        let trendlinePoints = [];
-        let trendlineSeries = [];
-        
         // Lightweight Chartsの初期化
         function initializeCharts() {
             // メインチャート（ローソク足）
@@ -1389,73 +1365,6 @@ app.get('/trade', (c) => {
                     width: document.getElementById('chartContainer').clientWidth 
                 });
             });
-
-            // チャートクリックでトレンドライン描画
-            chart.subscribeClick((param) => {
-                if (!trendlineMode || !param.time) return;
-                
-                const price = param.seriesData.get(candlestickSeries)?.close;
-                if (!price) return;
-
-                trendlinePoints.push({ time: param.time, price: price });
-
-                if (trendlinePoints.length === 2) {
-                    // 2点が揃ったらラインを描画
-                    drawTrendline(trendlinePoints[0], trendlinePoints[1]);
-                    trendlinePoints = [];
-                    // 描画後はモードを自動でオフ
-                    toggleTrendlineTool();
-                }
-            });
-        }
-
-        // トレンドラインを描画
-        function drawTrendline(point1, point2) {
-            const lineSeries = chart.addLineSeries({
-                color: 'rgba(255, 82, 82, 0.8)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
-
-            // 2点を結ぶラインデータを生成
-            const lineData = [
-                { time: point1.time, value: point1.price },
-                { time: point2.time, value: point2.price }
-            ];
-
-            lineSeries.setData(lineData);
-            trendlineSeries.push(lineSeries);
-        }
-
-        // トレンドラインツールのオン/オフ
-        function toggleTrendlineTool() {
-            trendlineMode = !trendlineMode;
-            const btn = document.getElementById('trendlineBtn');
-            
-            if (trendlineMode) {
-                btn.className = 'px-3 py-1 rounded-lg bg-blue-500 text-white transition flex items-center text-sm font-bold';
-                trendlinePoints = [];
-            } else {
-                btn.className = 'px-3 py-1 rounded-lg border-2 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white transition flex items-center text-sm font-bold';
-                trendlinePoints = [];
-            }
-        }
-
-        // すべてのトレンドラインを削除
-        function clearTrendlines() {
-            if (confirm('すべてのトレンドラインを削除しますか？')) {
-                trendlineSeries.forEach(series => {
-                    chart.removeSeries(series);
-                });
-                trendlineSeries = [];
-                trendlinePoints = [];
-                if (trendlineMode) {
-                    toggleTrendlineTool();
-                }
-            }
         }
 
         // GOLD10データを読み込んでチャートに表示
