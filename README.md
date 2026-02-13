@@ -4,9 +4,16 @@
 - **名称**: GOLD取引デモプラットフォーム
 - **目的**: GOLDのデモ取引を通じてFX取引の練習ができるWebアプリケーション
 - **価格データ**: Twelve Data API（XAU/USD）からリアルタイム取得
+- **TradingView連動チャート**: 
+  - **推奨**: [OANDA:XAUUSD](https://www.tradingview.com/chart/?symbol=OANDA%3AXAUUSD) - $4,900-$5,100範囲
+  - または: [FX:XAUUSD](https://www.tradingview.com/chart/?symbol=FX%3AXAUUSD)
+  - または: [XAUCNY](https://www.tradingview.com/symbols/XAUCNY/) - Gold/Chinese Yuan
+- **価格帯**: $4,900-$5,100（トロイオンスあたり）
 - **主な機能**: 
   - GOLD（XAU/USD）取引（買い/売り）
   - リアルタイム価格表示（Twelve Data Grow Plan）
+  - 30秒ごとに実価格更新（0秒、30秒に同期）
+  - キャッシュ期間中は±10円のランダム変動
   - エントリー・決済時のポップアップ通知
   - 個別ポジション決済
   - ポイントシステム
