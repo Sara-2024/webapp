@@ -196,14 +196,10 @@ app.get('/api/auth/me', async (c) => {
 app.get('/api/trade/gold-price', async (c) => {
   const now = Date.now()
   
-  // キャッシュが有効な場合でも、よりリアルな変動を追加
+  // キャッシュが有効な場合は同じ価格を返す
   if (now - lastPriceUpdate < PRICE_CACHE_DURATION) {
-    // キャッシュ価格にリアルな変動を追加（-5～+5ドル）
-    const variation = (Math.random() - 0.5) * 10
-    const price = cachedGoldPrice + variation
-    
     return c.json({ 
-      price: price.toFixed(2),
+      price: cachedGoldPrice.toFixed(2),
       usdJpy: 152.96,
       timestamp: new Date().toISOString(),
       cached: true
