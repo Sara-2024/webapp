@@ -942,11 +942,11 @@ app.post('/api/admin/videos', async (c) => {
     return c.json({ error: '管理者権限が必要です' }, 403)
   }
 
-  const { title, youtubeUrl, orderIndex } = await c.req.json()
+  const { title, youtubeUrl, orderIndex, category } = await c.req.json()
 
   const result = await c.env.DB.prepare(`
-    INSERT INTO videos (title, youtube_url, order_index) VALUES (?, ?, ?)
-  `).bind(title, youtubeUrl, orderIndex || 0).run()
+    INSERT INTO videos (title, youtube_url, order_index, category) VALUES (?, ?, ?, ?)
+  `).bind(title, youtubeUrl, orderIndex || 0, category || '環境設定').run()
 
   return c.json({
     success: true,
@@ -1002,6 +1002,22 @@ app.post('/api/chat/messages', async (c) => {
     success: true,
     messageId: result.meta.last_row_id
   })
+})
+
+// チャットメッセージ削除（管理者のみ）
+app.delete('/api/chat/messages/:id', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const messageId = c.req.param('id')
+
+  await c.env.DB.prepare(`
+    DELETE FROM chat_messages WHERE id = ?
+  `).bind(messageId).run()
+
+  return c.json({ success: true })
 })
 
 // ========== HTML レンダリング ==========
@@ -1282,9 +1298,10 @@ app.get('/trade', (c) => {
                     <span id="totalProfit" class="text-xl font-bold">¥0</span>
                 </div>
                 <div class="text-center mt-2">
-                    <button onclick="toggleReset()" class="text-sm text-gray-500 hover:text-gray-700">
-                        残高リセット
-                    </button>
+                    <p class="text-xs text-gray-500">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        残高リセット希望者はサポートラインに問い合わせください
+                    </p>
                 </div>
             </div>
 
@@ -1540,14 +1557,24 @@ app.get('/trade', (c) => {
 
                 // 新しいサインがあればマーカーを追加
                 if (signals && signals.length > 0) {
-                    const newMarkers = signals.slice(0, 10).map(signal => ({
-                        time: signal.timestamp,
-                        position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
-                        color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
-                        shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
-                        text: signal.type === 'BUY' ? '買サイン' : '売サイン',
-                    }));
-                    candlestickSeries.setMarkers(newMarkers);
+                    // 既存のマーカーと新しいマーカーをマージ（重複を避ける）
+                    const existingTimestamps = new Set(signalMarkers.map(m => m.time));
+                    const newMarkers = signals.filter(signal => !existingTimestamps.has(signal.timestamp))
+                        .map(signal => ({
+                            time: signal.timestamp,
+                            position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
+                            color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
+                            shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
+                            text: signal.type === 'BUY' ? '買サイン' : '売サイン',
+                        }));
+                    
+                    // 新しいマーカーがあれば追加
+                    if (newMarkers.length > 0) {
+                        signalMarkers = [...signalMarkers, ...newMarkers];
+                        // タイムスタンプ順にソート
+                        signalMarkers.sort((a, b) => a.time - b.time);
+                        candlestickSeries.setMarkers(signalMarkers);
+                    }
                 }
 
             } catch (error) {
@@ -2560,6 +2587,9 @@ app.get('/admin', (c) => {
             <button onclick="showTab('videos')" id="videosTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
                 <i class="fas fa-video mr-2"></i>動画管理
             </button>
+            <button onclick="showTab('chat')" id="chatTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
+                <i class="fas fa-comments mr-2"></i>チャット管理
+            </button>
         </div>
 
         <!-- ユーザー管理 -->
@@ -2630,6 +2660,18 @@ app.get('/admin', (c) => {
                         />
                     </div>
                     <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">カテゴリ</label>
+                        <select 
+                            id="videoCategory" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            required
+                        >
+                            <option value="環境設定">環境設定</option>
+                            <option value="トレード基礎">トレード基礎</option>
+                            <option value="その他">その他</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">YouTube URL</label>
                         <input 
                             type="url" 
@@ -2666,21 +2708,44 @@ app.get('/admin', (c) => {
                 </div>
             </div>
         </div>
+
+        <!-- チャット管理 -->
+        <div id="chatPanel" class="space-y-4 hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-comments mr-2 text-red-500"></i>チャットメッセージ一覧
+                </h2>
+                <div id="adminChatList" class="space-y-2 max-h-[600px] overflow-y-auto">
+                    <p class="text-center text-gray-500 py-4">読み込み中...</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
         function showTab(tab) {
+            // パネルの表示切り替え
+            document.getElementById('usersPanel').classList.add('hidden');
+            document.getElementById('videosPanel').classList.add('hidden');
+            document.getElementById('chatPanel').classList.add('hidden');
+            
+            // タブのスタイル切り替え
+            document.getElementById('usersTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+            document.getElementById('videosTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+            document.getElementById('chatTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+            
             if (tab === 'users') {
                 document.getElementById('usersPanel').classList.remove('hidden');
-                document.getElementById('videosPanel').classList.add('hidden');
                 document.getElementById('usersTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
-                document.getElementById('videosTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
-            } else {
-                document.getElementById('usersPanel').classList.add('hidden');
+            } else if (tab === 'videos') {
                 document.getElementById('videosPanel').classList.remove('hidden');
-                document.getElementById('usersTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
                 document.getElementById('videosTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
+                loadAdminVideos();
+            } else if (tab === 'chat') {
+                document.getElementById('chatPanel').classList.remove('hidden');
+                document.getElementById('chatTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
+                loadAdminChat();
             }
         }
 
@@ -2780,11 +2845,12 @@ app.get('/admin', (c) => {
         document.getElementById('addVideoForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const title = document.getElementById('videoTitle').value;
+            const category = document.getElementById('videoCategory').value;
             const youtubeUrl = document.getElementById('videoUrl').value;
             const orderIndex = parseInt(document.getElementById('videoOrder').value) || 0;
 
             try {
-                await axios.post('/api/admin/videos', { title, youtubeUrl, orderIndex });
+                await axios.post('/api/admin/videos', { title, youtubeUrl, orderIndex, category });
                 alert('動画を追加しました');
                 document.getElementById('addVideoForm').reset();
                 await loadAdminVideos();
@@ -2800,6 +2866,54 @@ app.get('/admin', (c) => {
                 await axios.delete(\`/api/admin/videos/\${id}\`);
                 alert('動画を削除しました');
                 await loadAdminVideos();
+            } catch (error) {
+                alert('削除に失敗しました');
+            }
+        }
+
+        async function loadAdminChat() {
+            try {
+                const response = await axios.get('/api/chat/messages');
+                const messages = response.data;
+                const container = document.getElementById('adminChatList');
+                
+                if (messages.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">メッセージがありません</p>';
+                    return;
+                }
+
+                container.innerHTML = messages.map(msg => {
+                    const date = new Date(msg.created_at).toLocaleString('ja-JP');
+                    return \`
+                        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                            <div class="flex justify-between items-start mb-2">
+                                <div class="flex-1">
+                                    <div class="font-bold text-gray-800">\${msg.username}</div>
+                                    <div class="text-sm text-gray-500">\${date}</div>
+                                </div>
+                                <button 
+                                    onclick="deleteChatMessage(\${msg.id})"
+                                    class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
+                                >
+                                    <i class="fas fa-trash mr-1"></i>削除
+                                </button>
+                            </div>
+                            <div class="text-gray-700">\${msg.message}</div>
+                        </div>
+                    \`;
+                }).join('');
+            } catch (error) {
+                console.error('チャット取得エラー:', error);
+            }
+        }
+
+        async function deleteChatMessage(id) {
+            if (!confirm('このメッセージを削除しますか？')) return;
+
+            try {
+                await axios.delete(\`/api/chat/messages/\${id}\`);
+                alert('メッセージを削除しました');
+                await loadAdminChat();
             } catch (error) {
                 alert('削除に失敗しました');
             }
