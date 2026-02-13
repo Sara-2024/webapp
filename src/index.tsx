@@ -1263,29 +1263,8 @@ app.get('/trade', (c) => {
                 <div id="openPositions" class="space-y-3"></div>
             </div>
 
-            <!-- AIフィードバック -->
-            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-500 p-4 mb-4 rounded-lg shadow">
-                <div class="flex items-start mb-3">
-                    <i class="fas fa-robot text-purple-500 text-xl mr-3 mt-1"></i>
-                    <div class="flex-1">
-                        <h3 class="font-bold text-purple-800 mb-1">AIフィードバック</h3>
-                        <p class="text-xs text-purple-600">あなたの取引履歴を分析して改善案を提案します</p>
-                    </div>
-                    <button 
-                        onclick="getAIFeedback()" 
-                        id="aiFeedbackBtn"
-                        class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition"
-                    >
-                        <i class="fas fa-sync-alt mr-1"></i>分析
-                    </button>
-                </div>
-                <div id="aiFeedbackContent" class="text-sm text-purple-700 bg-white bg-opacity-60 rounded p-3 min-h-[60px]">
-                    <p class="text-gray-500 italic">「分析」ボタンを押すと、AIがあなたの取引パターンを分析します。</p>
-                </div>
-            </div>
-
             <!-- オンラインチャット -->
-            <div class="bg-white rounded-lg shadow-md">
+            <div class="bg-white rounded-lg shadow-md mb-4">
                 <button onclick="toggleChat()" class="w-full flex items-center justify-between p-4 text-gray-700 hover:text-gray-900">
                     <div class="flex items-center">
                         <i class="fas fa-comments mr-2"></i>
@@ -1316,6 +1295,27 @@ app.get('/trade', (c) => {
                             </button>
                         </form>
                     </div>
+                </div>
+            </div>
+
+            <!-- AIフィードバック -->
+            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-500 p-4 rounded-lg shadow">
+                <div class="flex items-start mb-3">
+                    <i class="fas fa-robot text-purple-500 text-xl mr-3 mt-1"></i>
+                    <div class="flex-1">
+                        <h3 class="font-bold text-purple-800 mb-1">AIフィードバック</h3>
+                        <p class="text-xs text-purple-600">あなたの取引履歴を分析して改善案を提案します</p>
+                    </div>
+                    <button 
+                        onclick="getAIFeedback()" 
+                        id="aiFeedbackBtn"
+                        class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition"
+                    >
+                        <i class="fas fa-sync-alt mr-1"></i>分析
+                    </button>
+                </div>
+                <div id="aiFeedbackContent" class="text-sm text-purple-700 bg-white bg-opacity-60 rounded p-3 min-h-[60px]">
+                    <p class="text-gray-500 italic">「分析」ボタンを押すと、AIがあなたの取引パターンを分析します。</p>
                 </div>
             </div>
         </div>
