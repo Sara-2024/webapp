@@ -405,6 +405,74 @@ app.get('/api/trade/open-positions', async (c) => {
   return c.json(results)
 })
 
+// 15分経過ポジションの自動決済
+app.post('/api/trade/auto-close-expired', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  try {
+    // 15分以上経過したオープンポジションを取得
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    
+    const { results: expiredTrades } = await c.env.DB.prepare(`
+      SELECT * FROM trades 
+      WHERE user_id = ? AND status = 'OPEN' AND entry_time <= ?
+    `).bind(userId, fifteenMinutesAgo).all()
+
+    if (!expiredTrades || expiredTrades.length === 0) {
+      return c.json({ closedCount: 0 })
+    }
+
+    // GOLD10の最新価格を取得
+    const exitPrice = await getGold10Price(c.env.DB)
+    const exitTime = new Date().toISOString()
+    let totalClosedProfit = 0
+
+    // 各ポジションを決済
+    for (const trade of expiredTrades) {
+      const entryPrice = trade.entry_price as number
+      const amount = trade.amount as number
+      const type = trade.type as string
+
+      // 損益計算
+      let profitLoss = 0
+      if (type === 'BUY') {
+        profitLoss = (exitPrice - entryPrice) * amount * 152.96
+      } else {
+        profitLoss = (entryPrice - exitPrice) * amount * 152.96
+      }
+
+      totalClosedProfit += profitLoss
+
+      // トレード更新
+      await c.env.DB.prepare(`
+        UPDATE trades 
+        SET exit_price = ?, profit_loss = ?, status = 'CLOSED', exit_time = ?
+        WHERE id = ?
+      `).bind(exitPrice, profitLoss, exitTime, trade.id).run()
+
+      // ユーザーの残高と統計更新
+      await c.env.DB.prepare(`
+        UPDATE users 
+        SET balance = balance + ?, 
+            total_profit = total_profit + ?,
+            total_trades = total_trades + 1
+        WHERE id = ?
+      `).bind(profitLoss, profitLoss, userId).run()
+    }
+
+    return c.json({ 
+      closedCount: expiredTrades.length,
+      totalProfit: totalClosedProfit
+    })
+  } catch (error) {
+    console.error('Auto-close error:', error)
+    return c.json({ error: '自動決済エラー' }, 500)
+  }
+})
+
 // 取引履歴取得
 app.get('/api/trade/history', async (c) => {
   const userId = getCookie(c, 'user_id')
@@ -1099,7 +1167,7 @@ app.get('/trade', (c) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GOLD10取引</title>
+    <title>GOLD LABO</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Lightweight Charts CDN -->
@@ -1134,7 +1202,7 @@ app.get('/trade', (c) => {
     <!-- ヘッダー -->
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-coins mr-2"></i>GOLD10取引</h1>
+            <h1 class="text-xl font-bold"><i class="fas fa-coins mr-2"></i>GOLD LABO</h1>
             <nav class="flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
@@ -1834,6 +1902,21 @@ app.get('/trade', (c) => {
             
             // チャートも更新
             await updateGold10Chart();
+            
+            // 15分経過ポジションの自動決済チェック
+            try {
+                const autoCloseResponse = await axios.post('/api/trade/auto-close-expired');
+                if (autoCloseResponse.data.closedCount > 0) {
+                    const closedCount = autoCloseResponse.data.closedCount;
+                    const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
+                    showNotification('info', '自動決済', closedCount + '件のポジションが15分経過により自動決済されました（損益: ¥' + totalProfit + '）');
+                    // ユーザーデータと保有ポジションを再読み込み
+                    await loadUserData();
+                    await loadOpenPositions();
+                }
+            } catch (error) {
+                console.error('自動決済チェックエラー:', error);
+            }
             
             // 保有ポジションの損益も更新
             if (openPositions.length > 0) {
