@@ -26,7 +26,7 @@ function generateRandomUsername(): string {
   return `${adj}${noun}${num}`
 }
 
-// ユーティリティ関数：現在の金価格を取得（Twelve Data API使用 - GOLD先物）
+// ユーティリティ関数：現在の金価格を取得（Twelve Data API使用 - XAU/USD）
 async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
   if (!apiKey) {
     // API Keyが設定されていない場合はダミー価格を返す
@@ -34,9 +34,10 @@ async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
   }
 
   try {
-    // Twelve Data APIでGOLD先物（GC）の価格を取得
+    // Twelve Data APIでXAU/USD（ゴールドスポット）の価格を取得
+    // XAU/USDはGOLD先物とほぼ同じ価格帯（$4,900-$5,100）
     const response = await fetch(
-      `https://api.twelvedata.com/price?symbol=GC&apikey=${apiKey}`
+      `https://api.twelvedata.com/price?symbol=XAU/USD&apikey=${apiKey}`
     )
     const data = await response.json()
     
@@ -788,7 +789,7 @@ app.get('/trade', (c) => {
         <!-- 金価格表示 -->
         <div class="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-lg shadow-md p-6 mb-4">
             <div class="text-center">
-                <h2 class="text-sm text-gray-600 mb-2">GOLD (GC=F)</h2>
+                <h2 class="text-sm text-gray-600 mb-2">GOLD (XAU/USD)</h2>
                 <div id="goldPrice" class="text-5xl font-bold text-yellow-700 mb-2">$0.00</div>
                 <div class="text-sm text-gray-600">
                     USD/JPY: <span id="usdJpy">¥152.96</span>
