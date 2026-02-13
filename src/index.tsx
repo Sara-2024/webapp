@@ -1238,11 +1238,12 @@ app.get('/trade', (c) => {
         #chartContainer {
             position: relative;
             width: 100%;
-            height: 400px;
+            height: 300px;
+            touch-action: pan-y pinch-zoom;
         }
         @media (min-width: 640px) {
             #chartContainer {
-                height: 500px;
+                height: 400px;
             }
         }
         @media (min-width: 1024px) {
@@ -1314,7 +1315,7 @@ app.get('/trade', (c) => {
     <!-- メインコンテンツ: レスポンシブレイアウト -->
     <div class="flex flex-col lg:flex-row h-[calc(100vh-72px)]">
         <!-- チャートエリア（PC: 左2/3、スマホ: 上半分） -->
-        <div class="w-full lg:w-2/3 bg-white p-2 sm:p-4 overflow-y-auto border-b lg:border-b-0 lg:border-r border-gray-300">
+        <div class="w-full lg:w-2/3 bg-white p-2 sm:p-4 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300">
             <div class="mb-2 sm:mb-4">
                 <h2 class="text-lg sm:text-2xl font-bold text-gray-800 mb-1 sm:mb-2">
                     <i class="fas fa-chart-candlestick mr-1 sm:mr-2 text-yellow-600"></i>
@@ -1341,12 +1342,12 @@ app.get('/trade', (c) => {
             </div>
             
             <!-- ローソク足チャート -->
-            <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4">
+            <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4 flex-1 flex flex-col min-h-0">
                 <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
                     <i class="fas fa-chart-line mr-1 sm:mr-2"></i>価格チャート
                 </h3>
-                <div style="position: relative;">
-                    <div id="chartContainer"></div>
+                <div style="position: relative; flex: 1; min-height: 0;">
+                    <div id="chartContainer" style="height: 100%;"></div>
                     <!-- カスタムツールチップ -->
                     <div id="tooltip" style="
                         position: absolute;
@@ -1485,9 +1486,13 @@ app.get('/trade', (c) => {
         // Lightweight Chartsの初期化
         function initializeCharts() {
             // メインチャート（ローソク足）
-            chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
-                width: document.getElementById('chartContainer').clientWidth,
-                height: 600,
+            const chartContainer = document.getElementById('chartContainer');
+            const isMobile = window.innerWidth < 1024;
+            const chartHeight = isMobile ? chartContainer.clientHeight : 600;
+            
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: chartHeight,
                 layout: {
                     background: { color: '#ffffff' },
                     textColor: '#333',
@@ -1527,8 +1532,13 @@ app.get('/trade', (c) => {
 
             // ウィンドウリサイズ対応
             window.addEventListener('resize', () => {
+                const chartContainer = document.getElementById('chartContainer');
+                const isMobile = window.innerWidth < 1024;
+                const chartHeight = isMobile ? chartContainer.clientHeight : 600;
+                
                 chart.applyOptions({ 
-                    width: document.getElementById('chartContainer').clientWidth 
+                    width: chartContainer.clientWidth,
+                    height: chartHeight
                 });
             });
 
