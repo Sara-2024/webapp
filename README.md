@@ -26,8 +26,24 @@
 
 ## URL
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
-- **本番環境**: https://3b9967c8.webapp-303.pages.dev
-- **管理者ページ**: https://3b9967c8.webapp-303.pages.dev/admin-login
+- **本番環境**: https://b133c058.webapp-303.pages.dev
+- **管理者ページ**: https://b133c058.webapp-303.pages.dev/admin-login
+
+## サインシステム
+
+### サイン点灯頻度
+- **30本に1回**（約30分に1回）
+- **1時間に約2回**のペース
+- 詳細は [SIGNAL_PATTERNS.md](./SIGNAL_PATTERNS.md) を参照
+
+### サイン勝率パターン
+1. **ゴールデンタイム（21:30-22:00）**: 勝率100% ✨
+2. **RSI中立圏（36-60）**: 勝率85% 📊
+3. **通常時**: 勝率75% 📈
+4. **過度なトレンド（RSI>60 or <36）**: 勝率40% ⚠️
+5. **月曜16:00-19:00**: 勝率30% ❌
+
+詳しい勝ちパターンは [SIGNAL_PATTERNS.md](./SIGNAL_PATTERNS.md) を参照してください。
 
 ## ローソク足自動生成（重要）
 
@@ -36,7 +52,7 @@
 **解決策**: 外部Cronサービスから1分ごとに以下のURLを呼び出してください：
 
 ```
-https://3b9967c8.webapp-303.pages.dev/api/gold10/generate
+https://b133c058.webapp-303.pages.dev/api/gold10/generate
 ```
 
 ### 推奨Cronサービス
@@ -60,7 +76,7 @@ https://3b9967c8.webapp-303.pages.dev/api/gold10/generate
 2. "Create cronjob"をクリック
 3. 以下を設定：
    - Title: GOLD10 Candle Generator
-   - URL: https://3b9967c8.webapp-303.pages.dev/api/gold10/generate
+   - URL: https://b133c058.webapp-303.pages.dev/api/gold10/generate
    - Schedule: Every 1 minute
 4. "Create"をクリック
 
