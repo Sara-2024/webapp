@@ -702,7 +702,8 @@ app.get('/api/gold10/signals', async (c) => {
 })
 
 // 新しいローソク足とサインを生成（管理用エンドポイント - 本番では定期実行）
-app.post('/api/gold10/generate', async (c) => {
+// GETとPOSTの両方をサポート（外部Cronサービスから呼び出し可能）
+const generateCandleHandler = async (c: any) => {
   // 最新のローソク足を取得
   const latestCandle = await c.env.DB.prepare(`
     SELECT * FROM gold10_candles
@@ -776,7 +777,11 @@ app.post('/api/gold10/generate', async (c) => {
     signal: newSignal,
     message: '新しいローソク足とサインを生成しました'
   })
-})
+}
+
+// POSTとGETの両方でアクセス可能にする
+app.post('/api/gold10/generate', generateCandleHandler)
+app.get('/api/gold10/generate', generateCandleHandler)
 
 // 初期データ生成（初回のみ実行）
 app.post('/api/gold10/initialize', async (c) => {
