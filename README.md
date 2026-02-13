@@ -5,10 +5,12 @@
 - **目的**: GOLDのデモ取引を通じてFX取引の練習ができるWebアプリケーション
 - **価格データ**: Twelve Data API（XAU/USD）からリアルタイム取得
 - **TradingView連動チャート**: 
+  - **最推奨**: [FX_IDC:XAUUSDG](https://www.tradingview.com/chart/?symbol=FX_IDC%3AXAUUSDG) - Gold/USD Gram単位、$4,900-$5,100範囲
   - **推奨**: [OANDA:XAUUSD](https://www.tradingview.com/chart/?symbol=OANDA%3AXAUUSD) - $4,900-$5,100範囲
-  - または: [FX:XAUUSD](https://www.tradingview.com/chart/?symbol=FX%3AXAUUSD)
-  - または: [XAUCNY](https://www.tradingview.com/symbols/XAUCNY/) - Gold/Chinese Yuan
-- **価格帯**: $4,900-$5,100（トロイオンスあたり）
+  - または: [FX:XAUUSD](https://www.tradingview.com/chart/?symbol=FX%3AXAUUSD) - Forex市場
+  - ❌ **間違い**: TVC:GOLD や COMEX:GC1!（約$2,650、トロイオンス単位）は使用しないでください
+- **価格帯**: $4,900-$5,100
+- **重要**: Twelve DataのXAU/USD価格は約$4,900-$5,100の範囲で、TradingViewの標準XAUUSDスポット（約$2,650）とは異なります
 - **主な機能**: 
   - GOLD（XAU/USD）取引（買い/売り）
   - リアルタイム価格表示（Twelve Data Grow Plan）
