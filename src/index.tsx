@@ -422,6 +422,117 @@ app.get('/api/trade/history', async (c) => {
   return c.json(results)
 })
 
+// AIフィードバック取得
+app.get('/api/trade/ai-feedback', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  try {
+    // 最近50件の取引履歴を取得
+    const { results: trades } = await c.env.DB.prepare(`
+      SELECT * FROM trades 
+      WHERE user_id = ? AND status = 'CLOSED'
+      ORDER BY exit_time DESC
+      LIMIT 50
+    `).bind(userId).all()
+
+    if (!trades || trades.length === 0) {
+      return c.json({ 
+        feedback: '取引履歴がまだありません。まずはトレードを始めてみましょう！' 
+      })
+    }
+
+    // 取引統計を計算
+    const totalTrades = trades.length
+    const winTrades = trades.filter((t: any) => t.profit_loss > 0).length
+    const lossTrades = trades.filter((t: any) => t.profit_loss <= 0).length
+    const winRate = ((winTrades / totalTrades) * 100).toFixed(1)
+    const totalProfit = trades.reduce((sum: number, t: any) => sum + (t.profit_loss || 0), 0)
+    const avgProfit = (totalProfit / totalTrades).toFixed(2)
+    
+    // 買いと売りの統計
+    const buyTrades = trades.filter((t: any) => t.type === 'BUY')
+    const sellTrades = trades.filter((t: any) => t.type === 'SELL')
+    const buyWinRate = buyTrades.length > 0 
+      ? ((buyTrades.filter((t: any) => t.profit_loss > 0).length / buyTrades.length) * 100).toFixed(1)
+      : 0
+    const sellWinRate = sellTrades.length > 0
+      ? ((sellTrades.filter((t: any) => t.profit_loss > 0).length / sellTrades.length) * 100).toFixed(1)
+      : 0
+
+    // ChatGPT APIを呼び出してフィードバックを生成
+    const apiKey = c.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return c.json({ 
+        feedback: `総取引: ${totalTrades}回 | 勝率: ${winRate}% | 総損益: ¥${totalProfit.toLocaleString()}\n\n取引を続けて、パターンを見つけましょう！` 
+      })
+    }
+
+    const prompt = `あなたはプロのトレーディングコーチです。以下の取引データを分析して、具体的で実践的な改善案を3つ提案してください。
+
+【取引統計】
+- 総取引数: ${totalTrades}回
+- 勝率: ${winRate}%
+- 勝ち: ${winTrades}回 / 負け: ${lossTrades}回
+- 総損益: ¥${totalProfit.toLocaleString()}
+- 平均損益: ¥${avgProfit}
+- 買いの勝率: ${buyWinRate}%
+- 売りの勝率: ${sellWinRate}%
+
+【要件】
+1. 日本語で回答してください
+2. 150文字以内で簡潔に
+3. 具体的な数字を使った改善案を提示
+4. 励ましの言葉を含める
+5. 絵文字を1〜2個使用`
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'あなたはプロのトレーディングコーチです。' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 300,
+        temperature: 0.7
+      })
+    })
+
+    const data = await response.json()
+    
+    if (data.choices && data.choices[0]?.message?.content) {
+      return c.json({ 
+        feedback: data.choices[0].message.content,
+        stats: {
+          totalTrades,
+          winRate,
+          totalProfit,
+          buyWinRate,
+          sellWinRate
+        }
+      })
+    }
+
+    // APIエラー時のフォールバック
+    return c.json({ 
+      feedback: `📊 総取引: ${totalTrades}回 | 勝率: ${winRate}%\n💰 総損益: ¥${totalProfit.toLocaleString()}\n\n取引を続けて、パターンを見つけましょう！` 
+    })
+
+  } catch (error) {
+    console.error('AI Feedback error:', error)
+    return c.json({ 
+      feedback: '分析中にエラーが発生しました。もう一度お試しください。' 
+    }, 500)
+  }
+})
+
 // ========== GOLD10 API ==========
 
 import { 
@@ -1152,17 +1263,24 @@ app.get('/trade', (c) => {
                 <div id="openPositions" class="space-y-3"></div>
             </div>
 
-            <!-- AIアドバイス -->
-            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded">
-                <div class="flex items-start">
-                    <i class="fas fa-lightbulb text-blue-500 text-xl mr-3 mt-1"></i>
-                    <div>
-                        <h3 class="font-bold text-blue-800 mb-1">取引のヒント</h3>
-                        <p class="text-sm text-blue-700">
-                            サインが出たら3本後のローソク足で反転の可能性あり！<br>
-                            RSI 35-65の範囲でサインの勝率UP！
-                        </p>
+            <!-- AIフィードバック -->
+            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border-l-4 border-purple-500 p-4 mb-4 rounded-lg shadow">
+                <div class="flex items-start mb-3">
+                    <i class="fas fa-robot text-purple-500 text-xl mr-3 mt-1"></i>
+                    <div class="flex-1">
+                        <h3 class="font-bold text-purple-800 mb-1">AIフィードバック</h3>
+                        <p class="text-xs text-purple-600">あなたの取引履歴を分析して改善案を提案します</p>
                     </div>
+                    <button 
+                        onclick="getAIFeedback()" 
+                        id="aiFeedbackBtn"
+                        class="bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition"
+                    >
+                        <i class="fas fa-sync-alt mr-1"></i>分析
+                    </button>
+                </div>
+                <div id="aiFeedbackContent" class="text-sm text-purple-700 bg-white bg-opacity-60 rounded p-3 min-h-[60px]">
+                    <p class="text-gray-500 italic">「分析」ボタンを押すと、AIがあなたの取引パターンを分析します。</p>
                 </div>
             </div>
 
@@ -1639,6 +1757,48 @@ app.get('/trade', (c) => {
                 alert('メッセージ送信に失敗しました');
             }
         });
+
+        // AIフィードバック取得
+        async function getAIFeedback() {
+            const btn = document.getElementById('aiFeedbackBtn');
+            const content = document.getElementById('aiFeedbackContent');
+            
+            // ボタンを無効化してローディング表示
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>分析中...';
+            content.innerHTML = '<p class="text-gray-500 italic flex items-center"><i class="fas fa-spinner fa-spin mr-2"></i>AIが取引履歴を分析しています...</p>';
+            
+            try {
+                const response = await axios.get('/api/trade/ai-feedback');
+                const { feedback, stats } = response.data;
+                
+                // フィードバックを表示
+                let statsHtml = '';
+                if (stats) {
+                    statsHtml = \`
+                        <div class="mb-2 pb-2 border-b border-purple-200 text-xs">
+                            <span class="font-bold">📊 ${stats.totalTrades}回</span> | 
+                            <span class="font-bold text-green-600">勝率 ${stats.winRate}%</span> | 
+                            <span class="font-bold ${stats.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                ${stats.totalProfit >= 0 ? '+' : ''}¥${Math.round(stats.totalProfit).toLocaleString()}
+                            </span>
+                        </div>
+                    \`;
+                }
+                
+                content.innerHTML = statsHtml + \`<p class="whitespace-pre-wrap">${feedback}</p>\`;
+                
+                // ボタンを元に戻す
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt mr-1"></i>再分析';
+                
+            } catch (error) {
+                console.error('AIフィードバック取得エラー:', error);
+                content.innerHTML = '<p class="text-red-600">エラーが発生しました。もう一度お試しください。</p>';
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt mr-1"></i>分析';
+            }
+        }
 
         async function logout() {
             await axios.post('/api/auth/logout');
