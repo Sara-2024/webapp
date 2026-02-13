@@ -58,7 +58,7 @@ async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
 // キャッシュ用の価格データ
 let cachedGoldPrice = 4950.0
 let lastPriceUpdate = 0
-const PRICE_CACHE_DURATION = 10000 // 10秒間キャッシュ（よりリアルタイムに）
+const PRICE_CACHE_DURATION = 60000 // 60秒間キャッシュ（1分に1回実価格取得）
 
 // ユーティリティ関数：ポイント付与
 async function addPoints(db: D1Database, userId: number, points: number, type: string, description: string) {
@@ -197,10 +197,15 @@ app.get('/api/auth/me', async (c) => {
 app.get('/api/trade/gold-price', async (c) => {
   const now = Date.now()
   
-  // キャッシュが有効な場合は同じ価格を返す
+  // キャッシュが有効な場合は±10円のランダム変動を追加
   if (now - lastPriceUpdate < PRICE_CACHE_DURATION) {
+    // 円換算で±10円の変動を追加（$1あたり152.96円なので、ドル換算では±0.065ドル程度）
+    const yenVariation = (Math.random() - 0.5) * 20 // -10円 ~ +10円
+    const dollarVariation = yenVariation / 152.96  // 円をドルに変換
+    const priceWithVariation = cachedGoldPrice + dollarVariation
+    
     return c.json({ 
-      price: cachedGoldPrice.toFixed(2),
+      price: priceWithVariation.toFixed(2),
       usdJpy: 152.96,
       timestamp: new Date().toISOString(),
       cached: true
@@ -808,9 +813,10 @@ app.get('/trade', (c) => {
                 <input 
                     type="number" 
                     id="amount" 
-                    value="0.3" 
-                    step="0.1" 
-                    min="0.3"
+                    value="1" 
+                    step="1" 
+                    min="1"
+                    max="3"
                     class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
                 />
                 <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
@@ -819,9 +825,9 @@ app.get('/trade', (c) => {
             </div>
 
             <div class="grid grid-cols-3 gap-2">
-                <button onclick="setAmount(0.3)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">0.3</button>
-                <button onclick="setAmount(0.5)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">0.5</button>
-                <button onclick="setAmount(1.0)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">1</button>
+                <button onclick="setAmount(1)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">1</button>
+                <button onclick="setAmount(2)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">2</button>
+                <button onclick="setAmount(3)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">3</button>
             </div>
         </div>
 
@@ -1058,28 +1064,28 @@ app.get('/trade', (c) => {
         function increaseAmount() {
             const input = document.getElementById('amount');
             const current = parseFloat(input.value);
-            if (current < 0.3) {
-                input.value = 0.3;
-            } else if (current < 0.5) {
-                input.value = 0.5;
-            } else if (current < 1.0) {
-                input.value = 1.0;
+            if (current < 1) {
+                input.value = 1;
+            } else if (current < 2) {
+                input.value = 2;
+            } else if (current < 3) {
+                input.value = 3;
             } else {
-                input.value = 0.3;
+                input.value = 1; // 3の次は1に戻る
             }
         }
 
         function decreaseAmount() {
             const input = document.getElementById('amount');
             const current = parseFloat(input.value);
-            if (current > 1.0) {
-                input.value = 1.0;
-            } else if (current > 0.5) {
-                input.value = 0.5;
-            } else if (current > 0.3) {
-                input.value = 0.3;
+            if (current > 3) {
+                input.value = 3;
+            } else if (current > 2) {
+                input.value = 2;
+            } else if (current > 1) {
+                input.value = 1;
             } else {
-                input.value = 1.0;
+                input.value = 3; // 1の前は3に戻る
             }
         }
 
@@ -1169,7 +1175,7 @@ app.get('/trade', (c) => {
             await loadOpenPositions();
         })();
         
-        // 価格を5秒ごとに更新（よりリアルタイムに）
+        // 価格を5秒ごとに更新（1分に1回実価格取得、その間は±10円変動）
         setInterval(async () => {
             await updateGoldPrice();  // 価格更新を待つ
             if (openPositions.length > 0) {
