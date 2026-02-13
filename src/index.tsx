@@ -1,12 +1,1793 @@
 import { Hono } from 'hono'
-import { renderer } from './renderer'
+import { cors } from 'hono/cors'
+import { serveStatic } from 'hono/cloudflare-workers'
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 
-const app = new Hono()
+type Bindings = {
+  DB: D1Database
+}
 
-app.use(renderer)
+const app = new Hono<{ Bindings: Bindings }>()
 
+// CORS設定
+app.use('/api/*', cors())
+
+// 静的ファイル配信
+app.use('/static/*', serveStatic({ root: './public' }))
+
+// ユーティリティ関数：ランダムなユーザー名生成
+function generateRandomUsername(): string {
+  const adjectives = ['賢い', '素早い', '勇敢な', '静かな', '強い', '優しい', '冷静な', '熱い']
+  const nouns = ['トレーダー', 'パンダ', 'ドラゴン', 'タイガー', 'イーグル', 'フェニックス', 'ウルフ', 'ライオン']
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)]
+  const noun = nouns[Math.floor(Math.random() * nouns.length)]
+  const num = Math.floor(Math.random() * 1000)
+  return `${adj}${noun}${num}`
+}
+
+// ユーティリティ関数：現在の金価格を取得（デモ用のダミー価格）
+function getCurrentGoldPrice(): number {
+  // 実際の価格APIを使用する場合はここで呼び出す
+  // デモ用に4900～5100の範囲でランダムな価格を返す
+  return 4900 + Math.random() * 200
+}
+
+// ユーティリティ関数：ポイント付与
+async function addPoints(db: D1Database, userId: number, points: number, type: string, description: string) {
+  await db.prepare(`
+    INSERT INTO point_transactions (user_id, points, type, description)
+    VALUES (?, ?, ?, ?)
+  `).bind(userId, points, type, description).run()
+
+  await db.prepare(`
+    UPDATE users SET points = points + ? WHERE id = ?
+  `).bind(points, userId).run()
+}
+
+// ========== 認証API ==========
+
+// ユーザーログイン
+app.post('/api/auth/login', async (c) => {
+  const { password } = await c.req.json()
+  
+  if (!password || password.length !== 6 || !/^\d{6}$/.test(password)) {
+    return c.json({ error: '6桁の数字を入力してください' }, 400)
+  }
+
+  const user = await c.env.DB.prepare(`
+    SELECT * FROM users WHERE password = ?
+  `).bind(password).first()
+
+  if (!user) {
+    return c.json({ error: 'ユーザーが見つかりません' }, 404)
+  }
+
+  // ログインボーナスチェック
+  const today = new Date().toISOString().split('T')[0]
+  const lastLogin = user.last_login_date as string | null
+  
+  if (lastLogin !== today) {
+    // デイリーログインポイント
+    await addPoints(c.env.DB, user.id as number, 10, 'DAILY_LOGIN', 'デイリーログイン')
+
+    // 連続ログインチェック
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    let consecutiveDays = 1
+    
+    if (lastLogin === yesterday) {
+      consecutiveDays = (user.consecutive_login_days as number) + 1
+      if (consecutiveDays === 7) {
+        await addPoints(c.env.DB, user.id as number, 50, 'CONSECUTIVE_LOGIN', '7日連続ログインボーナス')
+        consecutiveDays = 0 // リセット
+      }
+    }
+
+    await c.env.DB.prepare(`
+      UPDATE users 
+      SET last_login_date = ?, consecutive_login_days = ?
+      WHERE id = ?
+    `).bind(today, consecutiveDays, user.id).run()
+  }
+
+  // セッション設定
+  setCookie(c, 'user_id', String(user.id), {
+    httpOnly: true,
+    secure: true,
+    maxAge: 60 * 60 * 24 * 7 // 7日間
+  })
+
+  return c.json({ 
+    success: true,
+    user: {
+      id: user.id,
+      username: user.username,
+      balance: user.balance,
+      points: user.points
+    }
+  })
+})
+
+// 管理者ログイン
+app.post('/api/auth/admin-login', async (c) => {
+  const { email, password } = await c.req.json()
+
+  const admin = await c.env.DB.prepare(`
+    SELECT * FROM admin_users WHERE email = ? AND password = ?
+  `).bind(email, password).first()
+
+  if (!admin) {
+    return c.json({ error: 'メールアドレスまたはパスワードが正しくありません' }, 401)
+  }
+
+  setCookie(c, 'admin_id', String(admin.id), {
+    httpOnly: true,
+    secure: true,
+    maxAge: 60 * 60 * 24 // 24時間
+  })
+
+  return c.json({ success: true })
+})
+
+// ログアウト
+app.post('/api/auth/logout', (c) => {
+  deleteCookie(c, 'user_id')
+  deleteCookie(c, 'admin_id')
+  return c.json({ success: true })
+})
+
+// 現在のユーザー情報取得
+app.get('/api/auth/me', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const user = await c.env.DB.prepare(`
+    SELECT id, username, balance, total_profit, total_trades, points, consecutive_login_days
+    FROM users WHERE id = ?
+  `).bind(userId).first()
+
+  if (!user) {
+    return c.json({ error: 'ユーザーが見つかりません' }, 404)
+  }
+
+  return c.json(user)
+})
+
+// ========== トレードAPI ==========
+
+// 現在の金価格取得
+app.get('/api/trade/gold-price', (c) => {
+  const price = getCurrentGoldPrice()
+  return c.json({ 
+    price: price.toFixed(2),
+    usdJpy: 152.96,
+    timestamp: new Date().toISOString()
+  })
+})
+
+// ポジション開く（買う/売る）
+app.post('/api/trade/open', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const { type, amount } = await c.req.json()
+  
+  if (type !== 'BUY' && type !== 'SELL') {
+    return c.json({ error: '無効な取引タイプ' }, 400)
+  }
+
+  const entryPrice = getCurrentGoldPrice()
+
+  const result = await c.env.DB.prepare(`
+    INSERT INTO trades (user_id, type, amount, entry_price, status)
+    VALUES (?, ?, ?, ?, 'OPEN')
+  `).bind(userId, type, amount, entryPrice).run()
+
+  return c.json({
+    success: true,
+    tradeId: result.meta.last_row_id,
+    type,
+    amount,
+    entryPrice
+  })
+})
+
+// ポジション決済
+app.post('/api/trade/close/:tradeId', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const tradeId = c.req.param('tradeId')
+  
+  const trade = await c.env.DB.prepare(`
+    SELECT * FROM trades WHERE id = ? AND user_id = ? AND status = 'OPEN'
+  `).bind(tradeId, userId).first()
+
+  if (!trade) {
+    return c.json({ error: '取引が見つかりません' }, 404)
+  }
+
+  const exitPrice = getCurrentGoldPrice()
+  const entryPrice = trade.entry_price as number
+  const amount = trade.amount as number
+  const type = trade.type as string
+
+  // 損益計算（簡易版）
+  let profitLoss = 0
+  if (type === 'BUY') {
+    profitLoss = (exitPrice - entryPrice) * amount * 152.96 // USD/JPY換算
+  } else {
+    profitLoss = (entryPrice - exitPrice) * amount * 152.96
+  }
+
+  const exitTime = new Date().toISOString()
+
+  // トレード更新
+  await c.env.DB.prepare(`
+    UPDATE trades 
+    SET exit_price = ?, profit_loss = ?, status = 'CLOSED', exit_time = ?
+    WHERE id = ?
+  `).bind(exitPrice, profitLoss, exitTime, tradeId).run()
+
+  // ユーザーの残高と統計更新
+  await c.env.DB.prepare(`
+    UPDATE users 
+    SET balance = balance + ?, 
+        total_profit = total_profit + ?,
+        total_trades = total_trades + 1
+    WHERE id = ?
+  `).bind(profitLoss, profitLoss, userId).run()
+
+  // トレードポイント付与（5分以内の連続取引は対象外）
+  const lastTrade = await c.env.DB.prepare(`
+    SELECT exit_time FROM trades 
+    WHERE user_id = ? AND status = 'CLOSED' AND id != ?
+    ORDER BY exit_time DESC LIMIT 1
+  `).bind(userId, tradeId).first()
+
+  if (!lastTrade || !lastTrade.exit_time) {
+    await addPoints(c.env.DB, Number(userId), 1, 'TRADE', 'トレード完了')
+  } else {
+    const lastExitTime = new Date(lastTrade.exit_time as string).getTime()
+    const currentExitTime = new Date(exitTime).getTime()
+    const diffMinutes = (currentExitTime - lastExitTime) / (1000 * 60)
+    
+    if (diffMinutes >= 5) {
+      await addPoints(c.env.DB, Number(userId), 1, 'TRADE', 'トレード完了')
+    }
+  }
+
+  return c.json({
+    success: true,
+    profitLoss,
+    exitPrice,
+    newBalance: (trade.balance as number) + profitLoss
+  })
+})
+
+// 現在のオープンポジション取得
+app.get('/api/trade/open-positions', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT * FROM trades 
+    WHERE user_id = ? AND status = 'OPEN'
+    ORDER BY entry_time DESC
+  `).bind(userId).all()
+
+  return c.json(results)
+})
+
+// 取引履歴取得
+app.get('/api/trade/history', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT * FROM trades 
+    WHERE user_id = ? AND status = 'CLOSED'
+    ORDER BY exit_time DESC
+    LIMIT 50
+  `).bind(userId).all()
+
+  return c.json(results)
+})
+
+// ========== ユーザーAPI ==========
+
+// ユーザー名更新
+app.put('/api/user/username', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const { username } = await c.req.json()
+  
+  if (!username || username.length < 2 || username.length > 20) {
+    return c.json({ error: 'ユーザー名は2～20文字で入力してください' }, 400)
+  }
+
+  await c.env.DB.prepare(`
+    UPDATE users SET username = ? WHERE id = ?
+  `).bind(username, userId).run()
+
+  return c.json({ success: true })
+})
+
+// ========== ランキングAPI ==========
+
+// 利益総額ランキング
+app.get('/api/ranking/profit', async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT username, total_profit, total_trades
+    FROM users
+    WHERE is_admin = 0
+    ORDER BY total_profit DESC
+    LIMIT 100
+  `).all()
+
+  return c.json(results)
+})
+
+// 取引数ランキング
+app.get('/api/ranking/trades', async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT username, total_trades, total_profit
+    FROM users
+    WHERE is_admin = 0
+    ORDER BY total_trades DESC
+    LIMIT 100
+  `).all()
+
+  return c.json(results)
+})
+
+// ========== 動画教材API ==========
+
+app.get('/api/videos', async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT * FROM videos ORDER BY order_index ASC, created_at DESC
+  `).all()
+
+  return c.json(results)
+})
+
+// ========== 管理者API ==========
+
+// ユーザー一覧取得
+app.get('/api/admin/users', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT id, username, password, balance, total_profit, total_trades, points, created_at
+    FROM users
+    ORDER BY created_at DESC
+  `).all()
+
+  return c.json(results)
+})
+
+// ユーザー追加
+app.post('/api/admin/users', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const { password, username } = await c.req.json()
+
+  if (!password || password.length !== 6 || !/^\d{6}$/.test(password)) {
+    return c.json({ error: 'パスワードは6桁の数字である必要があります' }, 400)
+  }
+
+  const finalUsername = username || generateRandomUsername()
+
+  const result = await c.env.DB.prepare(`
+    INSERT INTO users (password, username) VALUES (?, ?)
+  `).bind(password, finalUsername).run()
+
+  return c.json({
+    success: true,
+    userId: result.meta.last_row_id,
+    username: finalUsername,
+    password
+  })
+})
+
+// 動画追加
+app.post('/api/admin/videos', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const { title, youtubeUrl, orderIndex } = await c.req.json()
+
+  const result = await c.env.DB.prepare(`
+    INSERT INTO videos (title, youtube_url, order_index) VALUES (?, ?, ?)
+  `).bind(title, youtubeUrl, orderIndex || 0).run()
+
+  return c.json({
+    success: true,
+    videoId: result.meta.last_row_id
+  })
+})
+
+// 動画削除
+app.delete('/api/admin/videos/:id', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const videoId = c.req.param('id')
+  await c.env.DB.prepare(`DELETE FROM videos WHERE id = ?`).bind(videoId).run()
+
+  return c.json({ success: true })
+})
+
+// ========== チャットAPI ==========
+
+// メッセージ取得
+app.get('/api/chat/messages', async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT * FROM chat_messages
+    ORDER BY created_at DESC
+    LIMIT 50
+  `).all()
+
+  return c.json(results.reverse())
+})
+
+// メッセージ送信
+app.post('/api/chat/messages', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const { message } = await c.req.json()
+
+  const user = await c.env.DB.prepare(`
+    SELECT username FROM users WHERE id = ?
+  `).bind(userId).first()
+
+  const result = await c.env.DB.prepare(`
+    INSERT INTO chat_messages (user_id, username, message)
+    VALUES (?, ?, ?)
+  `).bind(userId, user?.username, message).run()
+
+  return c.json({
+    success: true,
+    messageId: result.meta.last_row_id
+  })
+})
+
+// ========== HTML レンダリング ==========
+
+// ログインページ
 app.get('/', (c) => {
-  return c.render(<h1>Hello!</h1>)
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FXデモトレーディングプラットフォーム - ログイン</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-gray-900 to-gray-800 min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8">
+        <div class="text-center mb-8">
+            <i class="fas fa-chart-line text-6xl text-yellow-500 mb-4"></i>
+            <h1 class="text-3xl font-bold text-gray-800">GOLD取引プラットフォーム</h1>
+            <p class="text-gray-600 mt-2">デモ取引システム</p>
+        </div>
+
+        <form id="loginForm" class="space-y-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-lock mr-2"></i>パスワード（6桁の数字）
+                </label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    maxlength="6"
+                    pattern="\\d{6}"
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-center text-2xl tracking-widest"
+                    placeholder="000000"
+                    required
+                />
+            </div>
+
+            <button 
+                type="submit"
+                class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center"
+            >
+                <i class="fas fa-sign-in-alt mr-2"></i>
+                ログイン
+            </button>
+        </form>
+
+        <div class="mt-8 text-center text-xs text-gray-500">
+            <a href="/admin-login" class="hover:text-gray-700">・</a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await axios.post('/api/auth/login', { password });
+                if (response.data.success) {
+                    window.location.href = '/trade';
+                }
+            } catch (error) {
+                alert(error.response?.data?.error || 'ログインに失敗しました');
+            }
+        });
+
+        // 数字のみ入力許可
+        document.getElementById('password').addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        });
+    </script>
+</body>
+</html>
+  `)
+})
+
+// 管理者ログインページ
+app.get('/admin-login', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者ログイン</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-gray-900 to-gray-800 min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8">
+        <div class="text-center mb-8">
+            <i class="fas fa-user-shield text-6xl text-red-500 mb-4"></i>
+            <h1 class="text-3xl font-bold text-gray-800">管理者ログイン</h1>
+        </div>
+
+        <form id="adminLoginForm" class="space-y-6">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-envelope mr-2"></i>メールアドレス
+                </label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                />
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-lock mr-2"></i>パスワード
+                </label>
+                <input 
+                    type="password" 
+                    id="adminPassword" 
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                />
+            </div>
+
+            <button 
+                type="submit"
+                class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg transition duration-200"
+            >
+                ログイン
+            </button>
+
+            <a href="/" class="block text-center text-gray-600 hover:text-gray-800 text-sm">
+                ← ユーザーログインに戻る
+            </a>
+        </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('adminPassword').value;
+
+            try {
+                const response = await axios.post('/api/auth/admin-login', { email, password });
+                if (response.data.success) {
+                    window.location.href = '/admin';
+                }
+            } catch (error) {
+                alert(error.response?.data?.error || 'ログインに失敗しました');
+            }
+        });
+    </script>
+</body>
+</html>
+  `)
+})
+
+// トレード画面
+app.get('/trade', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOLD取引</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <!-- ヘッダー -->
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-coins mr-2"></i>GOLD取引</h1>
+            <nav class="flex space-x-4">
+                <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
+                <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
+                <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
+                <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
+                <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 max-w-md">
+        <!-- 残高表示 -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-gray-600 text-sm">残高</span>
+                <span class="text-gray-600 text-sm">総損益</span>
+            </div>
+            <div class="flex justify-between items-center">
+                <span id="balance" class="text-2xl font-bold text-gray-800">¥0</span>
+                <span id="totalProfit" class="text-xl font-bold">¥0</span>
+            </div>
+            <div class="text-center mt-2">
+                <button onclick="toggleReset()" class="text-sm text-gray-500 hover:text-gray-700">
+                    残高リセット
+                </button>
+            </div>
+        </div>
+
+        <!-- 金価格表示 -->
+        <div class="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-lg shadow-md p-6 mb-4">
+            <div class="text-center">
+                <h2 class="text-sm text-gray-600 mb-2">GOLD (GC=F)</h2>
+                <div id="goldPrice" class="text-5xl font-bold text-yellow-700 mb-2">$0.00</div>
+                <div class="text-sm text-gray-600">
+                    USD/JPY: <span id="usdJpy">¥152.96</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 購入金額 -->
+        <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+            <label class="block text-gray-700 font-medium mb-3">購入金額</label>
+            
+            <div class="flex items-center justify-between mb-4">
+                <button onclick="decreaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
+                    −
+                </button>
+                <input 
+                    type="number" 
+                    id="amount" 
+                    value="0.3" 
+                    step="0.1" 
+                    min="0.1"
+                    class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
+                />
+                <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
+                    +
+                </button>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2">
+                <button onclick="setAmount(0.1)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">0.1</button>
+                <button onclick="setAmount(0.3)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">0.3</button>
+                <button onclick="setAmount(0.5)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">0.5</button>
+                <button onclick="setAmount(1.0)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">1</button>
+            </div>
+        </div>
+
+        <!-- 売買ボタン -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+            <button onclick="openPosition('BUY')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg">
+                <i class="fas fa-arrow-up mr-2"></i>買う
+            </button>
+            <button onclick="openPosition('SELL')" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-4 rounded-lg shadow-lg">
+                <i class="fas fa-arrow-down mr-2"></i>売る
+            </button>
+        </div>
+
+        <!-- 購入ボタン（決済用） -->
+        <button onclick="closeAllPositions()" id="closeButton" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-4 rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            購入
+        </button>
+
+        <!-- オープンポジション表示 -->
+        <div id="openPositions" class="mt-4 space-y-2"></div>
+
+        <!-- AIアドバイス -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mt-4 rounded">
+            <div class="flex items-start">
+                <i class="fas fa-lightbulb text-blue-500 text-xl mr-3 mt-1"></i>
+                <div>
+                    <h3 class="font-bold text-blue-800 mb-1">AIアドバイス</h3>
+                    <p class="text-sm text-blue-700">ポジションを開いてトレードを始めましょう！</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- オンラインチャット -->
+        <div class="bg-white rounded-lg shadow-md p-4 mt-4">
+            <button onclick="window.location.href='/chat'" class="w-full flex items-center justify-center text-gray-700 hover:text-gray-900">
+                <i class="fas fa-comments mr-2"></i>
+                <span>オンラインチャット</span>
+                <i class="fas fa-chevron-down ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        let currentPrice = 0;
+        let openPositions = [];
+
+        async function loadUserData() {
+            try {
+                const response = await axios.get('/api/auth/me');
+                const user = response.data;
+                document.getElementById('balance').textContent = '¥' + user.balance.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                const profitElement = document.getElementById('totalProfit');
+                profitElement.textContent = '¥' + user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                profitElement.className = user.total_profit >= 0 ? 'text-xl font-bold text-green-600' : 'text-xl font-bold text-red-600';
+            } catch (error) {
+                window.location.href = '/';
+            }
+        }
+
+        async function updateGoldPrice() {
+            try {
+                const response = await axios.get('/api/trade/gold-price');
+                currentPrice = parseFloat(response.data.price);
+                document.getElementById('goldPrice').textContent = '$' + currentPrice.toFixed(2);
+                document.getElementById('usdJpy').textContent = '¥' + response.data.usdJpy;
+            } catch (error) {
+                console.error('価格取得エラー:', error);
+            }
+        }
+
+        async function loadOpenPositions() {
+            try {
+                const response = await axios.get('/api/trade/open-positions');
+                openPositions = response.data;
+                displayOpenPositions();
+            } catch (error) {
+                console.error('ポジション取得エラー:', error);
+            }
+        }
+
+        function displayOpenPositions() {
+            const container = document.getElementById('openPositions');
+            const closeButton = document.getElementById('closeButton');
+            
+            if (openPositions.length === 0) {
+                container.innerHTML = '';
+                closeButton.disabled = true;
+                return;
+            }
+
+            closeButton.disabled = false;
+            container.innerHTML = openPositions.map(pos => {
+                const pl = pos.type === 'BUY' 
+                    ? (currentPrice - pos.entry_price) * pos.amount * 152.96
+                    : (pos.entry_price - currentPrice) * pos.amount * 152.96;
+                const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
+                const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                
+                return \`
+                    <div class="bg-white border border-gray-200 rounded-lg p-3">
+                        <div class="flex justify-between items-center">
+                            <span class="px-2 py-1 rounded text-sm font-bold \${typeColor}">
+                                \${pos.type === 'BUY' ? '買い' : '売り'}
+                            </span>
+                            <span class="text-sm text-gray-600">\${pos.amount} lot</span>
+                            <span class="\${plColor} font-bold">¥\${pl.toLocaleString('ja-JP', {minimumFractionDigits: 2})}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            エントリー価格: $\${pos.entry_price.toFixed(2)}
+                        </div>
+                    </div>
+                \`;
+            }).join('');
+        }
+
+        async function openPosition(type) {
+            const amount = parseFloat(document.getElementById('amount').value);
+            if (amount <= 0) {
+                alert('金額を入力してください');
+                return;
+            }
+
+            try {
+                await axios.post('/api/trade/open', { type, amount });
+                await loadOpenPositions();
+                await loadUserData();
+            } catch (error) {
+                alert('エラー: ' + (error.response?.data?.error || '取引に失敗しました'));
+            }
+        }
+
+        async function closeAllPositions() {
+            if (openPositions.length === 0) return;
+
+            try {
+                for (const pos of openPositions) {
+                    await axios.post(\`/api/trade/close/\${pos.id}\`);
+                }
+                await loadOpenPositions();
+                await loadUserData();
+                alert('ポジションを決済しました');
+            } catch (error) {
+                alert('決済に失敗しました');
+            }
+        }
+
+        function setAmount(value) {
+            document.getElementById('amount').value = value;
+        }
+
+        function increaseAmount() {
+            const input = document.getElementById('amount');
+            input.value = (parseFloat(input.value) + 0.1).toFixed(1);
+        }
+
+        function decreaseAmount() {
+            const input = document.getElementById('amount');
+            const newValue = parseFloat(input.value) - 0.1;
+            if (newValue >= 0.1) {
+                input.value = newValue.toFixed(1);
+            }
+        }
+
+        function toggleReset() {
+            if (confirm('残高を初期値（¥1,000,000）にリセットしますか？\\nこの操作は取り消せません。')) {
+                // TODO: API実装
+                alert('この機能は現在実装中です');
+            }
+        }
+
+        async function logout() {
+            await axios.post('/api/auth/logout');
+            window.location.href = '/';
+        }
+
+        // 初期化
+        loadUserData();
+        updateGoldPrice();
+        loadOpenPositions();
+        
+        // 価格を3秒ごとに更新
+        setInterval(() => {
+            updateGoldPrice();
+            if (openPositions.length > 0) {
+                displayOpenPositions(); // 損益をリアルタイム更新
+            }
+        }, 3000);
+    </script>
+</body>
+</html>
+  `)
+})
+
+// マイページ
+app.get('/mypage', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マイページ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-user mr-2"></i>マイページ</h1>
+            <nav class="flex space-x-4">
+                <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
+                <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
+                <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
+                <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
+                <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 max-w-4xl">
+        <!-- ユーザー情報 -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-4">
+            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-id-card mr-2 text-yellow-500"></i>ユーザー情報</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">アカウント名</label>
+                    <div class="flex space-x-2">
+                        <input 
+                            type="text" 
+                            id="username" 
+                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                            placeholder="ユーザー名"
+                        />
+                        <button onclick="updateUsername()" class="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-lg">
+                            変更
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-4 mt-6">
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">残高</div>
+                        <div id="balance" class="text-2xl font-bold text-blue-700">¥0</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">総利益</div>
+                        <div id="totalProfit" class="text-2xl font-bold text-green-700">¥0</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg">
+                        <div class="text-sm text-gray-600 mb-1">取引数</div>
+                        <div id="totalTrades" class="text-2xl font-bold text-purple-700">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ポイント情報 -->
+        <div class="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg shadow-md p-6 mb-4">
+            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-star mr-2 text-yellow-500"></i>保有ポイント</h2>
+            <div class="text-center">
+                <div id="points" class="text-5xl font-bold text-yellow-600 mb-4">0 pt</div>
+                <div class="text-sm text-gray-600">
+                    連続ログイン: <span id="consecutiveDays" class="font-bold">0</span>日
+                </div>
+            </div>
+
+            <div class="mt-6 bg-white rounded-lg p-4">
+                <h3 class="font-bold text-gray-800 mb-2">ポイント獲得方法</h3>
+                <ul class="text-sm text-gray-700 space-y-1">
+                    <li><i class="fas fa-check text-green-500 mr-2"></i>デイリーログイン: 毎日初回ログインで10ポイント</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i>7日連続ログイン: 追加で+50ポイントボーナス！</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i>トレード完了: 1トレードごとに1ポイント（決済から5分以内の連続取引は対象外）</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i>週次ランキング: 1位10,000pt / 2位5,000pt / 3位1,000pt</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 取引履歴 -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold mb-4"><i class="fas fa-history mr-2 text-yellow-500"></i>取引履歴</h2>
+            <div id="tradeHistory" class="space-y-2 max-h-96 overflow-y-auto">
+                <p class="text-center text-gray-500 py-4">読み込み中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        async function loadUserData() {
+            try {
+                const response = await axios.get('/api/auth/me');
+                const user = response.data;
+                document.getElementById('username').value = user.username;
+                document.getElementById('balance').textContent = '¥' + user.balance.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                document.getElementById('totalProfit').textContent = '¥' + user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                document.getElementById('totalTrades').textContent = user.total_trades.toLocaleString();
+                document.getElementById('points').textContent = user.points.toLocaleString() + ' pt';
+                document.getElementById('consecutiveDays').textContent = user.consecutive_login_days;
+            } catch (error) {
+                window.location.href = '/';
+            }
+        }
+
+        async function loadTradeHistory() {
+            try {
+                const response = await axios.get('/api/trade/history');
+                const trades = response.data;
+                const container = document.getElementById('tradeHistory');
+                
+                if (trades.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">取引履歴がありません</p>';
+                    return;
+                }
+
+                container.innerHTML = trades.map(trade => {
+                    const pl = trade.profit_loss;
+                    const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
+                    const typeColor = trade.type === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                    const date = new Date(trade.exit_time).toLocaleString('ja-JP');
+                    
+                    return \`
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="px-2 py-1 rounded text-sm font-bold \${typeColor}">
+                                    \${trade.type === 'BUY' ? '買い' : '売り'} \${trade.amount} lot
+                                </span>
+                                <span class="\${plColor} font-bold text-lg">¥\${pl.toLocaleString('ja-JP', {minimumFractionDigits: 2})}</span>
+                            </div>
+                            <div class="text-xs text-gray-600 space-y-1">
+                                <div>エントリー: $\${trade.entry_price.toFixed(2)} → 決済: $\${trade.exit_price.toFixed(2)}</div>
+                                <div>\${date}</div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+            } catch (error) {
+                console.error('取引履歴取得エラー:', error);
+            }
+        }
+
+        async function updateUsername() {
+            const username = document.getElementById('username').value;
+            if (!username || username.length < 2) {
+                alert('ユーザー名は2文字以上で入力してください');
+                return;
+            }
+
+            try {
+                await axios.put('/api/user/username', { username });
+                alert('ユーザー名を更新しました');
+            } catch (error) {
+                alert('更新に失敗しました: ' + (error.response?.data?.error || ''));
+            }
+        }
+
+        async function logout() {
+            await axios.post('/api/auth/logout');
+            window.location.href = '/';
+        }
+
+        loadUserData();
+        loadTradeHistory();
+    </script>
+</body>
+</html>
+  `)
+})
+
+// ランキングページ
+app.get('/ranking', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ランキング</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-trophy mr-2"></i>ランキング</h1>
+            <nav class="flex space-x-4">
+                <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
+                <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
+                <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
+                <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
+                <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 max-w-6xl">
+        <!-- タブ -->
+        <div class="flex space-x-2 mb-4">
+            <button onclick="showTab('profit')" id="profitTab" class="flex-1 bg-yellow-500 text-white font-bold py-3 rounded-lg shadow">
+                <i class="fas fa-dollar-sign mr-2"></i>利益総額ランキング
+            </button>
+            <button onclick="showTab('trades')" id="tradesTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
+                <i class="fas fa-chart-bar mr-2"></i>取引数ランキング
+            </button>
+        </div>
+
+        <!-- ランキング情報 -->
+        <div class="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg shadow-md p-6 mb-4">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">
+                <i class="fas fa-gift mr-2 text-red-500"></i>週次ランキング報酬
+            </h2>
+            <div class="flex justify-around text-center">
+                <div>
+                    <div class="text-3xl font-bold text-yellow-500">1位</div>
+                    <div class="text-sm text-gray-600">10,000 pt</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-gray-400">2位</div>
+                    <div class="text-sm text-gray-600">5,000 pt</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-orange-600">3位</div>
+                    <div class="text-sm text-gray-600">1,000 pt</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 利益総額ランキング -->
+        <div id="profitRanking" class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold mb-4">利益総額ランキング</h2>
+            <div id="profitList" class="space-y-2">
+                <p class="text-center text-gray-500 py-4">読み込み中...</p>
+            </div>
+        </div>
+
+        <!-- 取引数ランキング -->
+        <div id="tradesRanking" class="bg-white rounded-lg shadow-md p-6 hidden">
+            <h2 class="text-2xl font-bold mb-4">取引数ランキング</h2>
+            <div id="tradesList" class="space-y-2">
+                <p class="text-center text-gray-500 py-4">読み込み中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        function showTab(tab) {
+            if (tab === 'profit') {
+                document.getElementById('profitRanking').classList.remove('hidden');
+                document.getElementById('tradesRanking').classList.add('hidden');
+                document.getElementById('profitTab').className = 'flex-1 bg-yellow-500 text-white font-bold py-3 rounded-lg shadow';
+                document.getElementById('tradesTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+            } else {
+                document.getElementById('profitRanking').classList.add('hidden');
+                document.getElementById('tradesRanking').classList.remove('hidden');
+                document.getElementById('profitTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+                document.getElementById('tradesTab').className = 'flex-1 bg-yellow-500 text-white font-bold py-3 rounded-lg shadow';
+            }
+        }
+
+        async function loadProfitRanking() {
+            try {
+                const response = await axios.get('/api/ranking/profit');
+                const rankings = response.data;
+                const container = document.getElementById('profitList');
+                
+                if (rankings.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">データがありません</p>';
+                    return;
+                }
+
+                container.innerHTML = rankings.map((user, index) => {
+                    const rankIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : (index + 1);
+                    const profitColor = user.total_profit >= 0 ? 'text-green-600' : 'text-red-600';
+                    
+                    return \`
+                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                            <div class="flex items-center space-x-4">
+                                <div class="text-2xl font-bold w-12 text-center">\${rankIcon}</div>
+                                <div>
+                                    <div class="font-bold text-gray-800">\${user.username}</div>
+                                    <div class="text-sm text-gray-500">取引数: \${user.total_trades}</div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="\${profitColor} font-bold text-lg">
+                                    ¥\${user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2})}
+                                </div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+            } catch (error) {
+                console.error('ランキング取得エラー:', error);
+            }
+        }
+
+        async function loadTradesRanking() {
+            try {
+                const response = await axios.get('/api/ranking/trades');
+                const rankings = response.data;
+                const container = document.getElementById('tradesList');
+                
+                if (rankings.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">データがありません</p>';
+                    return;
+                }
+
+                container.innerHTML = rankings.map((user, index) => {
+                    const rankIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : (index + 1);
+                    const profitColor = user.total_profit >= 0 ? 'text-green-600' : 'text-red-600';
+                    
+                    return \`
+                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                            <div class="flex items-center space-x-4">
+                                <div class="text-2xl font-bold w-12 text-center">\${rankIcon}</div>
+                                <div>
+                                    <div class="font-bold text-gray-800">\${user.username}</div>
+                                    <div class="text-sm \${profitColor}">
+                                        利益: ¥\${user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2})}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-gray-800 font-bold text-lg">
+                                    <i class="fas fa-chart-bar mr-1"></i>\${user.total_trades.toLocaleString()}
+                                </div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+            } catch (error) {
+                console.error('ランキング取得エラー:', error);
+            }
+        }
+
+        async function logout() {
+            await axios.post('/api/auth/logout');
+            window.location.href = '/';
+        }
+
+        loadProfitRanking();
+        loadTradesRanking();
+    </script>
+</body>
+</html>
+  `)
+})
+
+// 動画教材ページ
+app.get('/videos', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>動画教材</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-video mr-2"></i>動画教材</h1>
+            <nav class="flex space-x-4">
+                <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
+                <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
+                <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
+                <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
+                <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 max-w-4xl">
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold mb-6">
+                <i class="fas fa-graduation-cap mr-2 text-yellow-500"></i>トレーディング教材
+            </h2>
+            <div id="videoList" class="space-y-4">
+                <p class="text-center text-gray-500 py-4">読み込み中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        function getYoutubeEmbedUrl(url) {
+            const videoId = url.split('/').pop().split('?')[0];
+            return \`https://www.youtube.com/embed/\${videoId}\`;
+        }
+
+        async function loadVideos() {
+            try {
+                const response = await axios.get('/api/videos');
+                const videos = response.data;
+                const container = document.getElementById('videoList');
+                
+                if (videos.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">動画がありません</p>';
+                    return;
+                }
+
+                container.innerHTML = videos.map(video => \`
+                    <div class="border border-gray-200 rounded-lg overflow-hidden">
+                        <div class="aspect-video">
+                            <iframe 
+                                class="w-full h-full"
+                                src="\${getYoutubeEmbedUrl(video.youtube_url)}" 
+                                frameborder="0" 
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                allowfullscreen
+                            ></iframe>
+                        </div>
+                        <div class="p-4">
+                            <h3 class="font-bold text-lg text-gray-800">\${video.title}</h3>
+                            <a href="\${video.youtube_url}" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 mt-2 inline-block">
+                                <i class="fab fa-youtube mr-1"></i>YouTubeで開く
+                            </a>
+                        </div>
+                    </div>
+                \`).join('');
+            } catch (error) {
+                console.error('動画取得エラー:', error);
+            }
+        }
+
+        async function logout() {
+            await axios.post('/api/auth/logout');
+            window.location.href = '/';
+        }
+
+        loadVideos();
+    </script>
+</body>
+</html>
+  `)
+})
+
+// チャットページ
+app.get('/chat', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オンラインチャット</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-comments mr-2"></i>オンラインチャット</h1>
+            <nav class="flex space-x-4">
+                <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
+                <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
+                <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
+                <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
+                <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 max-w-4xl">
+        <div class="bg-white rounded-lg shadow-md flex flex-col" style="height: calc(100vh - 180px);">
+            <!-- メッセージエリア -->
+            <div id="messageArea" class="flex-1 overflow-y-auto p-4 space-y-3">
+                <p class="text-center text-gray-500 py-4">読み込み中...</p>
+            </div>
+
+            <!-- 入力エリア -->
+            <div class="border-t border-gray-200 p-4">
+                <form id="messageForm" class="flex space-x-2">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
+                        placeholder="メッセージを入力..."
+                        required
+                    />
+                    <button 
+                        type="submit"
+                        class="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-lg font-bold"
+                    >
+                        <i class="fas fa-paper-plane mr-1"></i>送信
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        let currentUserId = null;
+
+        async function loadCurrentUser() {
+            try {
+                const response = await axios.get('/api/auth/me');
+                currentUserId = response.data.id;
+            } catch (error) {
+                window.location.href = '/';
+            }
+        }
+
+        async function loadMessages() {
+            try {
+                const response = await axios.get('/api/chat/messages');
+                const messages = response.data;
+                const container = document.getElementById('messageArea');
+                
+                if (messages.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">メッセージがありません</p>';
+                    return;
+                }
+
+                container.innerHTML = messages.map(msg => {
+                    const isMyMessage = msg.user_id === currentUserId;
+                    const time = new Date(msg.created_at).toLocaleString('ja-JP', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    return \`
+                        <div class="\${isMyMessage ? 'flex justify-end' : 'flex justify-start'}">
+                            <div class="\${isMyMessage ? 'bg-yellow-100 border-yellow-300' : 'bg-gray-100 border-gray-300'} max-w-md px-4 py-2 rounded-lg border">
+                                <div class="text-xs text-gray-600 mb-1">\${msg.username} · \${time}</div>
+                                <div class="text-gray-800">\${msg.message}</div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+
+                // 最新メッセージまでスクロール
+                container.scrollTop = container.scrollHeight;
+            } catch (error) {
+                console.error('メッセージ取得エラー:', error);
+            }
+        }
+
+        document.getElementById('messageForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            try {
+                await axios.post('/api/chat/messages', { message });
+                input.value = '';
+                await loadMessages();
+            } catch (error) {
+                alert('メッセージ送信に失敗しました');
+            }
+        });
+
+        async function logout() {
+            await axios.post('/api/auth/logout');
+            window.location.href = '/';
+        }
+
+        loadCurrentUser();
+        loadMessages();
+        
+        // 5秒ごとに新しいメッセージをチェック
+        setInterval(loadMessages, 5000);
+    </script>
+</body>
+</html>
+  `)
+})
+
+// 管理者ダッシュボード
+app.get('/admin', (c) => {
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者ダッシュボード</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <header class="bg-gradient-to-r from-red-600 to-red-500 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-user-shield mr-2"></i>管理者ダッシュボード</h1>
+            <button onclick="logout()" class="hover:text-red-200">
+                <i class="fas fa-sign-out-alt mr-1"></i>ログアウト
+            </button>
+        </div>
+    </header>
+
+    <div class="container mx-auto p-4 max-w-6xl">
+        <!-- タブ -->
+        <div class="flex space-x-2 mb-4">
+            <button onclick="showTab('users')" id="usersTab" class="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow">
+                <i class="fas fa-users mr-2"></i>ユーザー管理
+            </button>
+            <button onclick="showTab('videos')" id="videosTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
+                <i class="fas fa-video mr-2"></i>動画管理
+            </button>
+        </div>
+
+        <!-- ユーザー管理 -->
+        <div id="usersPanel" class="space-y-4">
+            <!-- ユーザー追加フォーム -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-user-plus mr-2 text-red-500"></i>新規ユーザー追加
+                </h2>
+                <form id="addUserForm" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">パスワード（6桁の数字）</label>
+                            <input 
+                                type="text" 
+                                id="newPassword" 
+                                maxlength="6"
+                                pattern="\\d{6}"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                placeholder="000000"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">ユーザー名（任意）</label>
+                            <input 
+                                type="text" 
+                                id="newUsername" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                placeholder="空欄の場合は自動生成"
+                            />
+                        </div>
+                    </div>
+                    <button 
+                        type="submit"
+                        class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg"
+                    >
+                        ユーザーを追加
+                    </button>
+                </form>
+            </div>
+
+            <!-- ユーザー一覧 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">ユーザー一覧</h2>
+                <div id="usersList" class="space-y-2 max-h-96 overflow-y-auto">
+                    <p class="text-center text-gray-500 py-4">読み込み中...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 動画管理 -->
+        <div id="videosPanel" class="space-y-4 hidden">
+            <!-- 動画追加フォーム -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-plus-circle mr-2 text-red-500"></i>動画追加
+                </h2>
+                <form id="addVideoForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">タイトル</label>
+                        <input 
+                            type="text" 
+                            id="videoTitle" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            placeholder="例: エントリーの基礎"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">YouTube URL</label>
+                        <input 
+                            type="url" 
+                            id="videoUrl" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            placeholder="https://youtu.be/..."
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">表示順序</label>
+                        <input 
+                            type="number" 
+                            id="videoOrder" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            placeholder="0"
+                            value="0"
+                        />
+                    </div>
+                    <button 
+                        type="submit"
+                        class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-lg"
+                    >
+                        動画を追加
+                    </button>
+                </form>
+            </div>
+
+            <!-- 動画一覧 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">動画一覧</h2>
+                <div id="adminVideosList" class="space-y-2">
+                    <p class="text-center text-gray-500 py-4">読み込み中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        function showTab(tab) {
+            if (tab === 'users') {
+                document.getElementById('usersPanel').classList.remove('hidden');
+                document.getElementById('videosPanel').classList.add('hidden');
+                document.getElementById('usersTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
+                document.getElementById('videosTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+            } else {
+                document.getElementById('usersPanel').classList.add('hidden');
+                document.getElementById('videosPanel').classList.remove('hidden');
+                document.getElementById('usersTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
+                document.getElementById('videosTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                const response = await axios.get('/api/admin/users');
+                const users = response.data;
+                const container = document.getElementById('usersList');
+                
+                container.innerHTML = users.map(user => {
+                    const date = new Date(user.created_at).toLocaleDateString('ja-JP');
+                    const profitColor = user.total_profit >= 0 ? 'text-green-600' : 'text-red-600';
+                    
+                    return \`
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <div class="grid grid-cols-4 gap-4">
+                                <div>
+                                    <div class="text-sm text-gray-500">ユーザー名</div>
+                                    <div class="font-bold">\${user.username}</div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-500">パスワード</div>
+                                    <div class="font-mono font-bold">\${user.password}</div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-500">残高</div>
+                                    <div class="font-bold">¥\${user.balance.toLocaleString()}</div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-500">総利益</div>
+                                    <div class="font-bold \${profitColor}">¥\${user.total_profit.toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="mt-2 text-xs text-gray-500">
+                                取引数: \${user.total_trades} | ポイント: \${user.points}pt | 登録日: \${date}
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+            } catch (error) {
+                console.error('ユーザー取得エラー:', error);
+                if (error.response?.status === 403) {
+                    alert('管理者権限がありません');
+                    window.location.href = '/admin-login';
+                }
+            }
+        }
+
+        async function loadAdminVideos() {
+            try {
+                const response = await axios.get('/api/videos');
+                const videos = response.data;
+                const container = document.getElementById('adminVideosList');
+                
+                if (videos.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">動画がありません</p>';
+                    return;
+                }
+
+                container.innerHTML = videos.map(video => \`
+                    <div class="border border-gray-200 rounded-lg p-4 flex justify-between items-center">
+                        <div class="flex-1">
+                            <h3 class="font-bold text-gray-800">\${video.title}</h3>
+                            <a href="\${video.youtube_url}" target="_blank" class="text-sm text-blue-600 hover:text-blue-800">
+                                \${video.youtube_url}
+                            </a>
+                            <div class="text-xs text-gray-500 mt-1">表示順序: \${video.order_index}</div>
+                        </div>
+                        <button 
+                            onclick="deleteVideo(\${video.id})" 
+                            class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg"
+                        >
+                            <i class="fas fa-trash mr-1"></i>削除
+                        </button>
+                    </div>
+                \`).join('');
+            } catch (error) {
+                console.error('動画取得エラー:', error);
+            }
+        }
+
+        document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('newPassword').value;
+            const username = document.getElementById('newUsername').value;
+
+            try {
+                const response = await axios.post('/api/admin/users', { password, username });
+                alert(\`ユーザーを追加しました\\nユーザー名: \${response.data.username}\\nパスワード: \${response.data.password}\`);
+                document.getElementById('addUserForm').reset();
+                await loadUsers();
+            } catch (error) {
+                alert('エラー: ' + (error.response?.data?.error || 'ユーザー追加に失敗しました'));
+            }
+        });
+
+        document.getElementById('addVideoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = document.getElementById('videoTitle').value;
+            const youtubeUrl = document.getElementById('videoUrl').value;
+            const orderIndex = parseInt(document.getElementById('videoOrder').value) || 0;
+
+            try {
+                await axios.post('/api/admin/videos', { title, youtubeUrl, orderIndex });
+                alert('動画を追加しました');
+                document.getElementById('addVideoForm').reset();
+                await loadAdminVideos();
+            } catch (error) {
+                alert('エラー: ' + (error.response?.data?.error || '動画追加に失敗しました'));
+            }
+        });
+
+        async function deleteVideo(id) {
+            if (!confirm('この動画を削除しますか？')) return;
+
+            try {
+                await axios.delete(\`/api/admin/videos/\${id}\`);
+                alert('動画を削除しました');
+                await loadAdminVideos();
+            } catch (error) {
+                alert('削除に失敗しました');
+            }
+        }
+
+        async function logout() {
+            await axios.post('/api/auth/logout');
+            window.location.href = '/admin-login';
+        }
+
+        // 数字のみ入力許可
+        document.getElementById('newPassword').addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        });
+
+        loadUsers();
+        loadAdminVideos();
+    </script>
+</body>
+</html>
+  `)
 })
 
 export default app
