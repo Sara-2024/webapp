@@ -3,7 +3,7 @@
 ## プロジェクト概要
 - **名称**: GOLD取引デモプラットフォーム
 - **目的**: GOLDのデモ取引を通じてFX取引の練習ができるWebアプリケーション
-- **価格データ**: Alpha Vantage API（XAUUSD）からリアルタイム取得
+- **価格データ**: Twelve Data API（GOLD先物 GC）からリアルタイム取得
 - **主な機能**: 
   - GOLD（XAUUSD）取引（買い/売り）
   - リアルタイム価格表示（Alpha Vantage API）
@@ -19,32 +19,32 @@
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
 - **本番環境**: デプロイ後に更新
 
-## Alpha Vantage API設定
+## Twelve Data API設定
 
-このプラットフォームは**Alpha Vantage API**を使用してXAUUSD（GOLD）のリアルタイム価格を取得します。
+このプラットフォームは**Twelve Data API**を使用してGOLD先物（GC）のリアルタイム価格を取得します。
 
 ### API Keyの取得方法
-1. https://www.alphavantage.co/support/#api-key にアクセス
-2. メールアドレスを入力して無料API Keyを取得
+1. https://twelvedata.com/ にアクセス
+2. 無料アカウントを作成してAPI Keyを取得
 3. API Key制限：
-   - 無料プラン: **1分あたり5リクエスト**
-   - このプラットフォームでは1分間キャッシュを使用して制限内に収める設計
+   - 無料プラン: **800リクエスト/日**（約1分に1リクエスト可能）
+   - このプラットフォームでは1分間キャッシュを使用して効率的に利用
 
 ### ローカル開発でのAPI Key設定
 `.dev.vars` ファイルに設定（既に作成済み）:
 \`\`\`bash
-ALPHA_VANTAGE_API_KEY=your_api_key_here
+TWELVE_DATA_API_KEY=your_api_key_here
 \`\`\`
 
 ### 本番環境でのAPI Key設定
 \`\`\`bash
 # Cloudflare Pages Secretとして設定
-wrangler pages secret put ALPHA_VANTAGE_API_KEY --project-name webapp
+wrangler pages secret put TWELVE_DATA_API_KEY --project-name webapp
 # プロンプトでAPI Keyを入力
 \`\`\`
 
 ### API Keyが未設定の場合
-- 自動的にダミー価格（2600-2700 USD範囲）を生成
+- 自動的にダミー価格（4900-5100 USD範囲）を生成
 - 正常に動作しますが、実際の市場価格は反映されません
 
 ## 実装済み機能
@@ -57,8 +57,8 @@ wrangler pages secret put ALPHA_VANTAGE_API_KEY --project-name webapp
    - 7日連続ログインボーナス（+50pt）
 
 2. **トレード機能**（`/trade`）
-   - XAUUSD（GOLD）価格のリアルタイム表示
-     - Alpha Vantage APIから取得
+   - GOLD先物（GC）価格のリアルタイム表示
+     - Twelve Data APIから取得
      - 1分間キャッシュ（API制限対策）
      - キャッシュ中は小さな変動を追加
    - **エントリー時のポップアップ通知**（緑色）

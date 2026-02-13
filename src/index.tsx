@@ -5,7 +5,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 
 type Bindings = {
   DB: D1Database
-  ALPHA_VANTAGE_API_KEY?: string
+  TWELVE_DATA_API_KEY?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -26,35 +26,36 @@ function generateRandomUsername(): string {
   return `${adj}${noun}${num}`
 }
 
-// ユーティリティ関数：現在の金価格を取得（Alpha Vantage API使用）
+// ユーティリティ関数：現在の金価格を取得（Twelve Data API使用 - GOLD先物）
 async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
   if (!apiKey) {
     // API Keyが設定されていない場合はダミー価格を返す
-    return 2600 + Math.random() * 100
+    return 4900 + Math.random() * 200
   }
 
   try {
-    // Alpha Vantage FX APIでXAUUSDの価格を取得
+    // Twelve Data APIでGOLD先物（GC）の価格を取得
     const response = await fetch(
-      `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=XAU&to_currency=USD&apikey=${apiKey}`
+      `https://api.twelvedata.com/price?symbol=GC&apikey=${apiKey}`
     )
     const data = await response.json()
     
-    if (data['Realtime Currency Exchange Rate']) {
-      const price = parseFloat(data['Realtime Currency Exchange Rate']['5. Exchange Rate'])
+    if (data.price) {
+      const price = parseFloat(data.price)
       return price
     }
     
     // エラーの場合はダミー価格
-    return 2600 + Math.random() * 100
+    console.error('Twelve Data API error:', data)
+    return 4900 + Math.random() * 200
   } catch (error) {
-    console.error('Alpha Vantage API error:', error)
-    return 2600 + Math.random() * 100
+    console.error('Twelve Data API error:', error)
+    return 4900 + Math.random() * 200
   }
 }
 
 // キャッシュ用の価格データ
-let cachedGoldPrice = 2650.0
+let cachedGoldPrice = 4950.0
 let lastPriceUpdate = 0
 const PRICE_CACHE_DURATION = 60000 // 1分間キャッシュ（API制限対策）
 
@@ -200,8 +201,8 @@ app.get('/api/trade/gold-price', async (c) => {
     })
   }
   
-  // Alpha Vantage API Keyを環境変数から取得
-  const apiKey = c.env.ALPHA_VANTAGE_API_KEY || ''
+  // Twelve Data API Keyを環境変数から取得
+  const apiKey = c.env.TWELVE_DATA_API_KEY || ''
   
   try {
     const price = await getCurrentGoldPrice(apiKey)
@@ -240,7 +241,7 @@ app.post('/api/trade/open', async (c) => {
   }
 
   // API Keyを環境変数から取得
-  const apiKey = c.env.ALPHA_VANTAGE_API_KEY || ''
+  const apiKey = c.env.TWELVE_DATA_API_KEY || ''
   const entryPrice = await getCurrentGoldPrice(apiKey)
 
   const result = await c.env.DB.prepare(`
@@ -275,7 +276,7 @@ app.post('/api/trade/close/:tradeId', async (c) => {
   }
 
   // API Keyを環境変数から取得
-  const apiKey = c.env.ALPHA_VANTAGE_API_KEY || ''
+  const apiKey = c.env.TWELVE_DATA_API_KEY || ''
   const exitPrice = await getCurrentGoldPrice(apiKey)
   const entryPrice = trade.entry_price as number
   const amount = trade.amount as number

@@ -13,8 +13,8 @@
       "database_id": "local-dev"
     }
   ],
-  // Alpha Vantage API Key (本番環境ではwrangler secret putで設定)
+  // Twelve Data API Key (本番環境ではwrangler secret putで設定)
   "vars": {
-    "ALPHA_VANTAGE_API_KEY": ""
+    "TWELVE_DATA_API_KEY": ""
   }
 }
