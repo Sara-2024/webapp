@@ -26,8 +26,15 @@
 
 ## URL
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
-- **本番環境**: https://5e652ab1.webapp-303.pages.dev
-- **管理者ページ**: https://5e652ab1.webapp-303.pages.dev/admin-login
+- **本番環境**: https://91ecec0c.webapp-303.pages.dev
+- **管理者ページ**: https://91ecec0c.webapp-303.pages.dev/admin-login
+
+## トレードルール
+- **ローソク足**: 1分足（60秒ごとに確定、途中経過は10秒ごとに更新）
+- **ロット**: 1ロット固定
+- **最大ポジション数**: 3ポジションまで
+- **自動決済**: エントリーから15分経過で自動決済
+- **初期残高**: ¥1,000,000
 
 ## Twelve Data API設定
 
