@@ -58,7 +58,7 @@ async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
 // キャッシュ用の価格データ
 let cachedGoldPrice = 4950.0
 let lastPriceUpdate = 0
-const PRICE_CACHE_DURATION = 60000 // 60秒間キャッシュ（1分に1回実価格取得）
+const PRICE_CACHE_DURATION = 30000 // 30秒間キャッシュ（30秒ごとに実価格取得）
 
 // ユーティリティ関数：ポイント付与
 async function addPoints(db: D1Database, userId: number, points: number, type: string, description: string) {
@@ -196,9 +196,23 @@ app.get('/api/auth/me', async (c) => {
 // 現在の金価格取得
 app.get('/api/trade/gold-price', async (c) => {
   const now = Date.now()
+  const currentDate = new Date(now)
+  
+  // 現在の秒数を取得（0-59）
+  const currentSeconds = currentDate.getSeconds()
+  
+  // 次の30秒区切りまでの秒数を計算
+  // 0-29秒: 次は30秒、30-59秒: 次は0秒（次の分）
+  const secondsUntilNext30 = currentSeconds < 30 
+    ? 30 - currentSeconds 
+    : 60 - currentSeconds
+  
+  // 最後のAPI取得から30秒以上経過しているか、または30秒区切りのタイミングか確認
+  const timeSinceLastUpdate = now - lastPriceUpdate
+  const shouldUpdate = timeSinceLastUpdate >= PRICE_CACHE_DURATION || lastPriceUpdate === 0
   
   // キャッシュが有効な場合は±10円のランダム変動を追加
-  if (now - lastPriceUpdate < PRICE_CACHE_DURATION) {
+  if (!shouldUpdate && timeSinceLastUpdate < PRICE_CACHE_DURATION) {
     // 円換算で±10円の変動を追加（$1あたり152.96円なので、ドル換算では±0.065ドル程度）
     const yenVariation = (Math.random() - 0.5) * 20 // -10円 ~ +10円
     const dollarVariation = yenVariation / 152.96  // 円をドルに変換
@@ -208,7 +222,8 @@ app.get('/api/trade/gold-price', async (c) => {
       price: priceWithVariation.toFixed(2),
       usdJpy: 152.96,
       timestamp: new Date().toISOString(),
-      cached: true
+      cached: true,
+      nextUpdate: secondsUntilNext30
     })
   }
   
@@ -224,7 +239,8 @@ app.get('/api/trade/gold-price', async (c) => {
       price: price.toFixed(2),
       usdJpy: 152.96,
       timestamp: new Date().toISOString(),
-      cached: false
+      cached: false,
+      nextUpdate: 30
     })
   } catch (error) {
     // エラー時はキャッシュまたはダミー価格
@@ -233,7 +249,8 @@ app.get('/api/trade/gold-price', async (c) => {
       usdJpy: 152.96,
       timestamp: new Date().toISOString(),
       cached: true,
-      error: 'API呼び出しエラー'
+      error: 'API呼び出しエラー',
+      nextUpdate: secondsUntilNext30
     })
   }
 })
@@ -1175,7 +1192,7 @@ app.get('/trade', (c) => {
             await loadOpenPositions();
         })();
         
-        // 価格を5秒ごとに更新（1分に1回実価格取得、その間は±10円変動）
+        // 価格を5秒ごとに更新（30秒ごとに実価格取得、その間は±10円変動）
         setInterval(async () => {
             await updateGoldPrice();  // 価格更新を待つ
             if (openPositions.length > 0) {
