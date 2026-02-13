@@ -1311,7 +1311,25 @@ app.get('/trade', (c) => {
                 <h3 class="text-lg font-bold mb-2 text-gray-700">
                     <i class="fas fa-chart-line mr-2"></i>価格チャート
                 </h3>
-                <div id="chartContainer"></div>
+                <div style="position: relative;">
+                    <div id="chartContainer"></div>
+                    <!-- カスタムツールチップ -->
+                    <div id="tooltip" style="
+                        position: absolute;
+                        display: none;
+                        padding: 8px;
+                        background: rgba(255, 255, 255, 0.95);
+                        border: 1px solid #ccc;
+                        border-radius: 4px;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                        pointer-events: none;
+                        z-index: 1000;
+                        font-size: 12px;
+                        line-height: 1.5;
+                    ">
+                        <div id="tooltipContent"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1446,6 +1464,7 @@ app.get('/trade', (c) => {
         let chart = null;
         let candlestickSeries = null;
         let signalMarkers = [];
+        let candlesDataWithRSI = [];  // RSIデータを含むローソク足データを保持
         
         // Lightweight Chartsの初期化
         function initializeCharts() {
@@ -1484,6 +1503,59 @@ app.get('/trade', (c) => {
                     width: document.getElementById('chartContainer').clientWidth 
                 });
             });
+
+            // カスタムツールチップ
+            const tooltip = document.getElementById('tooltip');
+            const tooltipContent = document.getElementById('tooltipContent');
+
+            chart.subscribeCrosshairMove((param) => {
+                if (!param.time || !param.point) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+
+                // 該当時刻のローソク足データを探す
+                const candleData = candlesDataWithRSI.find(c => c.timestamp === param.time);
+                if (!candleData) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+
+                // 日時をフォーマット
+                const date = new Date(param.time * 1000);
+                const dateStr = date.toLocaleString('ja-JP', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                // RSI値を取得
+                const rsi = candleData.rsi ? candleData.rsi.toFixed(1) : '--';
+                
+                // RSI色分け
+                let rsiColor = '#3b82f6';  // blue
+                if (candleData.rsi >= 70) {
+                    rsiColor = '#ef4444';  // red
+                } else if (candleData.rsi <= 30) {
+                    rsiColor = '#22c55e';  // green
+                }
+
+                // ツールチップの内容を設定（2行表示）
+                tooltipContent.innerHTML = \`
+                    <div style="color: #333; font-weight: bold;">\${dateStr}</div>
+                    <div style="color: \${rsiColor}; font-weight: bold; margin-top: 2px;">RSI: \${rsi}</div>
+                \`;
+
+                // ツールチップの位置を設定
+                const chartContainer = document.getElementById('chartContainer');
+                const chartRect = chartContainer.getBoundingClientRect();
+                
+                tooltip.style.display = 'block';
+                tooltip.style.left = param.point.x + 'px';
+                tooltip.style.top = (param.point.y - 60) + 'px';  // 少し上に表示
+            });
         }
 
         // GOLD10データを読み込んでチャートに表示
@@ -1492,6 +1564,9 @@ app.get('/trade', (c) => {
                 // 過去12時間分のローソク足データを取得
                 const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
                 const candles = candlesResponse.data;
+
+                // RSIデータを含むローソク足データを保存
+                candlesDataWithRSI = candles;
 
                 // サインデータを取得
                 const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
@@ -1564,6 +1639,14 @@ app.get('/trade', (c) => {
                         low: candle.low,
                         close: candle.close
                     });
+
+                    // RSIデータを含むローソク足データを更新
+                    const existingIndex = candlesDataWithRSI.findIndex(c => c.timestamp === candle.timestamp);
+                    if (existingIndex >= 0) {
+                        candlesDataWithRSI[existingIndex] = candle;
+                    } else {
+                        candlesDataWithRSI.push(candle);
+                    }
 
                     // 現在価格とRSI表示を更新
                     document.getElementById('gold10Price').textContent = 
