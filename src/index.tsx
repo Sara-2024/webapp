@@ -77,8 +77,17 @@ async function addPoints(db: D1Database, userId: number, points: number, type: s
 app.post('/api/auth/login', async (c) => {
   const { password } = await c.req.json()
   
-  if (!password || password.length !== 6 || !/^\d{6}$/.test(password)) {
-    return c.json({ error: '6桁の数字を入力してください' }, 400)
+  // パスワード検証：7文字、数字6文字+英字1文字
+  if (!password || password.length !== 7) {
+    return c.json({ error: 'パスワードは7文字（数字6桁+英字1文字）で入力してください' }, 400)
+  }
+  
+  // 数字6文字と英字1文字を含むかチェック
+  const digitCount = (password.match(/\d/g) || []).length
+  const letterCount = (password.match(/[a-zA-Z]/g) || []).length
+  
+  if (digitCount !== 6 || letterCount !== 1) {
+    return c.json({ error: 'パスワードは数字6桁と英字1文字を含む必要があります' }, 400)
   }
 
   const user = await c.env.DB.prepare(`
@@ -455,8 +464,16 @@ app.post('/api/admin/users', async (c) => {
 
   const { password, username } = await c.req.json()
 
-  if (!password || password.length !== 6 || !/^\d{6}$/.test(password)) {
-    return c.json({ error: 'パスワードは6桁の数字である必要があります' }, 400)
+  // パスワード検証：7文字、数字6文字+英字1文字
+  if (!password || password.length !== 7) {
+    return c.json({ error: 'パスワードは7文字（数字6桁+英字1文字）である必要があります' }, 400)
+  }
+  
+  const digitCount = (password.match(/\d/g) || []).length
+  const letterCount = (password.match(/[a-zA-Z]/g) || []).length
+  
+  if (digitCount !== 6 || letterCount !== 1) {
+    return c.json({ error: 'パスワードは数字6桁と英字1文字を含む必要があります' }, 400)
   }
 
   const finalUsername = username || generateRandomUsername()
@@ -567,17 +584,17 @@ app.get('/', (c) => {
         <form id="loginForm" class="space-y-6">
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">
-                    <i class="fas fa-lock mr-2"></i>パスワード（6桁の数字）
+                    <i class="fas fa-lock mr-2"></i>パスワード（数字6桁+英字1文字）
                 </label>
                 <input 
-                    type="password" 
+                    type="text" 
                     id="password" 
-                    maxlength="6"
-                    pattern="\\d{6}"
+                    maxlength="7"
                     class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-center text-2xl tracking-widest"
-                    placeholder="000000"
+                    placeholder="123456a"
                     required
                 />
+                <p class="text-xs text-gray-500 mt-2">例: 123456a, a234567, 12a3456</p>
             </div>
 
             <button 
@@ -612,9 +629,9 @@ app.get('/', (c) => {
             }
         });
 
-        // 数字のみ入力許可
+        // 数字と英字のみ入力許可
         document.getElementById('password').addEventListener('input', (e) => {
-            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+            e.target.value = e.target.value.replace(/[^0-9a-zA-Z]/g, '');
         });
     </script>
 </body>
@@ -1801,16 +1818,16 @@ app.get('/admin', (c) => {
                 <form id="addUserForm" class="space-y-4">
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">パスワード（6桁の数字）</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">パスワード（数字6桁+英字1文字）</label>
                             <input 
                                 type="text" 
                                 id="newPassword" 
-                                maxlength="6"
-                                pattern="\\d{6}"
+                                maxlength="7"
                                 class="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                                placeholder="000000"
+                                placeholder="123456a"
                                 required
                             />
+                            <p class="text-xs text-gray-500 mt-1">例: 123456a, a234567, 12a3456</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">ユーザー名（任意）</label>
@@ -2039,9 +2056,9 @@ app.get('/admin', (c) => {
             window.location.href = '/admin-login';
         }
 
-        // 数字のみ入力許可
+        // 数字と英字のみ入力許可
         document.getElementById('newPassword').addEventListener('input', (e) => {
-            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+            e.target.value = e.target.value.replace(/[^0-9a-zA-Z]/g, '');
         });
 
         loadUsers();
