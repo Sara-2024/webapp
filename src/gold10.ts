@@ -156,8 +156,10 @@ export function shouldGenerateSignal(lastSignalTime: number | null): boolean {
 
 /**
  * 反転サインを生成
- * - RSIが65-35の範囲内なら勝率が高い（85%）
- * - 範囲外なら勝率が低い（65%）
+ * - 21:30-22:00のサインは必ず勝つ（100%）
+ * - 過度なトレンド時（RSI > 60 または RSI < 36）は負けやすい（40%）
+ * - 月曜日の16:00-19:00は連敗しやすい（30%）
+ * - RSIが36-60の範囲内なら勝率が高い（85%）
  * - 基本勝率は75%
  */
 export function generateSignal(candle: Candle, candleId: number, rsi: number): Signal {
@@ -173,14 +175,34 @@ export function generateSignal(candle: Candle, candleId: number, rsi: number): S
     ? price + targetMove 
     : price - targetMove
 
+  // 日本時間を取得（UTC+9）
+  const signalDate = new Date(candle.timestamp * 1000)
+  const jstOffset = 9 * 60 * 60 * 1000  // 9時間のミリ秒
+  const jstDate = new Date(signalDate.getTime() + jstOffset)
+  const dayOfWeek = jstDate.getUTCDay()  // 0=日曜, 1=月曜, ...
+  const hour = jstDate.getUTCHours()
+  const minute = jstDate.getUTCMinutes()
+
   // 勝率計算
   let winRate = 0.75  // 基本勝率75%
 
-  // RSIが65-35の範囲内なら勝率アップ
-  if (rsi >= 35 && rsi <= 65) {
-    winRate = 0.85  // 85%
-  } else {
-    winRate = 0.65  // 65%
+  // 【優先度1】21:30-22:00のサインは必ず勝つ
+  if (hour === 21 && minute >= 30) {
+    winRate = 1.0  // 100%勝利
+  } else if (hour === 22 && minute === 0) {
+    winRate = 1.0  // 100%勝利
+  }
+  // 【優先度2】月曜日の16:00-19:00は連敗しやすい
+  else if (dayOfWeek === 1 && hour >= 16 && hour < 19) {
+    winRate = 0.3  // 30%勝率
+  }
+  // 【優先度3】過度なトレンド時（RSI > 60 または RSI < 36）は負けやすい
+  else if (rsi > 60 || rsi < 36) {
+    winRate = 0.4  // 40%勝率
+  }
+  // 【優先度4】RSIが36-60の範囲内なら勝率アップ
+  else if (rsi >= 36 && rsi <= 60) {
+    winRate = 0.85  // 85%勝率
   }
 
   // 勝ち/負けを決定（実際の反転は3つ後のローソク足で判定）

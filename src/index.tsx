@@ -1597,7 +1597,7 @@ app.get('/trade', (c) => {
                 const response = await axios.get('/api/auth/me');
                 const user = response.data;
                 currentUserId = user.id;
-                document.getElementById('balance').textContent = '¥' + user.balance.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                document.getElementById('balance').textContent = '¥' + Math.round(user.balance).toLocaleString('ja-JP');
                 const profitElement = document.getElementById('totalProfit');
                 profitElement.textContent = '¥' + Math.round(user.total_profit).toLocaleString('ja-JP');
                 profitElement.className = user.total_profit >= 0 ? 'text-xl font-bold text-green-600' : 'text-xl font-bold text-red-600';
@@ -2036,8 +2036,8 @@ app.get('/mypage', (c) => {
                 const response = await axios.get('/api/auth/me');
                 const user = response.data;
                 document.getElementById('username').value = user.username;
-                document.getElementById('balance').textContent = '¥' + user.balance.toLocaleString('ja-JP', {minimumFractionDigits: 2});
-                document.getElementById('totalProfit').textContent = '¥' + user.total_profit.toLocaleString('ja-JP', {minimumFractionDigits: 2});
+                document.getElementById('balance').textContent = '¥' + Math.round(user.balance).toLocaleString('ja-JP');
+                document.getElementById('totalProfit').textContent = '¥' + Math.round(user.total_profit).toLocaleString('ja-JP');
                 document.getElementById('totalTrades').textContent = user.total_trades.toLocaleString();
                 document.getElementById('points').textContent = user.points.toLocaleString() + ' pt';
                 document.getElementById('consecutiveDays').textContent = user.consecutive_login_days;
@@ -2069,7 +2069,7 @@ app.get('/mypage', (c) => {
                                 <span class="px-2 py-1 rounded text-sm font-bold \${typeColor}">
                                     \${trade.type === 'BUY' ? '買い' : '売り'} \${trade.amount} lot
                                 </span>
-                                <span class="\${plColor} font-bold text-lg">¥\${pl.toLocaleString('ja-JP', {minimumFractionDigits: 2})}</span>
+                                <span class="\${plColor} font-bold text-lg">¥\${Math.round(pl).toLocaleString('ja-JP')}</span>
                             </div>
                             <div class="text-xs text-gray-600 space-y-1">
                                 <div>エントリー: $\${trade.entry_price.toFixed(2)} → 決済: $\${trade.exit_price.toFixed(2)}</div>
