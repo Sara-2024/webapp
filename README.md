@@ -26,8 +26,8 @@
 
 ## URL
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
-- **本番環境**: https://91ecec0c.webapp-303.pages.dev
-- **管理者ページ**: https://91ecec0c.webapp-303.pages.dev/admin-login
+- **本番環境**: https://c7ff9002.webapp-303.pages.dev
+- **管理者ページ**: https://c7ff9002.webapp-303.pages.dev/admin-login
 
 ## トレードルール
 - **ローソク足**: 1分足（60秒ごとに確定、途中経過は10秒ごとに更新）
