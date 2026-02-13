@@ -55,6 +55,28 @@ async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
   }
 }
 
+// ユーティリティ関数：GOLD10の現在価格を取得（DBから最新のローソク足価格を取得）
+async function getGold10Price(db: D1Database): Promise<number> {
+  try {
+    const latestCandle = await db.prepare(`
+      SELECT close FROM gold10_candles
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `).first()
+
+    if (latestCandle && latestCandle.close) {
+      return latestCandle.close as number
+    }
+
+    // データがない場合はデフォルト値
+    console.error('GOLD10: No candle data found')
+    return 5000
+  } catch (error) {
+    console.error('GOLD10 price fetch error:', error)
+    return 5000
+  }
+}
+
 // キャッシュ用の価格データ
 let cachedGoldPrice = 4950.0
 let lastPriceUpdate = 0
@@ -268,9 +290,14 @@ app.post('/api/trade/open', async (c) => {
     return c.json({ error: '無効な取引タイプ' }, 400)
   }
 
-  // API Keyを環境変数から取得
-  const apiKey = c.env.TWELVE_DATA_API_KEY || ''
-  const entryPrice = await getCurrentGoldPrice(apiKey)
+  // GOLD10の最新価格を取得
+  const latestCandle = await c.env.DB.prepare(`
+    SELECT close FROM gold10_candles
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).first()
+
+  const entryPrice = latestCandle ? latestCandle.close as number : 5000
 
   const result = await c.env.DB.prepare(`
     INSERT INTO trades (user_id, type, amount, entry_price, status)
@@ -303,14 +330,13 @@ app.post('/api/trade/close/:tradeId', async (c) => {
     return c.json({ error: '取引が見つかりません' }, 404)
   }
 
-  // API Keyを環境変数から取得
-  const apiKey = c.env.TWELVE_DATA_API_KEY || ''
-  const exitPrice = await getCurrentGoldPrice(apiKey)
+  // GOLD10の最新価格を取得（決済価格）
+  const exitPrice = await getGold10Price(c.env.DB)
   const entryPrice = trade.entry_price as number
   const amount = trade.amount as number
   const type = trade.type as string
 
-  // 損益計算（XAUUSDの場合、1ozあたりの価格差）
+  // 損益計算（GOLD10の場合、1ozあたりの価格差）
   let profitLoss = 0
   if (type === 'BUY') {
     profitLoss = (exitPrice - entryPrice) * amount * 152.96 // USD/JPY換算
@@ -1455,10 +1481,15 @@ app.get('/trade', (c) => {
 
         async function updateGoldPrice() {
             try {
-                const response = await axios.get('/api/trade/gold-price');
-                currentPrice = parseFloat(response.data.price);
-                document.getElementById('goldPrice').textContent = '$' + currentPrice.toFixed(2);
-                document.getElementById('usdJpy').textContent = '¥' + response.data.usdJpy;
+                // GOLD10の最新価格を取得
+                const response = await axios.get('/api/gold10/latest');
+                const candle = response.data.candle;
+                currentPrice = parseFloat(candle.close);
+                // GOLD10価格とRSIを更新
+                document.getElementById('gold10Price').textContent = '$' + currentPrice.toFixed(2);
+                if (candle.rsi) {
+                    document.getElementById('gold10RSI').textContent = candle.rsi.toFixed(1);
+                }
             } catch (error) {
                 console.error('価格取得エラー:', error);
             }
@@ -1691,12 +1722,21 @@ app.get('/trade', (c) => {
             
             // チャートを更新
             await updateGold10Chart();
+        }, 30000);  // 30秒ごと
+
+        // GOLD10価格と損益を10秒ごとに更新
+        setInterval(async () => {
+            // 最新のGOLD10価格を取得して表示を更新
+            await updateGoldPrice();
+            
+            // チャートも更新
+            await updateGold10Chart();
             
             // 保有ポジションの損益も更新
             if (openPositions.length > 0) {
                 displayOpenPositions();
             }
-        }, 30000);  // 30秒ごと
+        }, 10000);  // 10秒ごと
 
         // チャットが開いている場合は5秒ごとに更新
         setInterval(() => {
