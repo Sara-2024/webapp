@@ -396,6 +396,199 @@ app.get('/api/trade/history', async (c) => {
   return c.json(results)
 })
 
+// ========== GOLD10 API ==========
+
+import { 
+  generateCandle, 
+  generateSignal, 
+  calculateRSI, 
+  shouldGenerateSignal,
+  generateInitialCandles,
+  type Candle,
+  type Signal
+} from './gold10'
+
+// 過去3時間分のローソク足データを取得
+app.get('/api/gold10/candles', async (c) => {
+  const hoursParam = c.req.query('hours') || '3'
+  const hours = parseInt(hoursParam)
+  const limit = hours * 60  // 1分足なので、時間 × 60本
+  
+  const candles = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `).bind(limit).all()
+
+  // 新しい順→古い順に並び替え
+  const sortedCandles = candles.results.reverse()
+  
+  return c.json(sortedCandles)
+})
+
+// 最新のローソク足データを取得
+app.get('/api/gold10/latest', async (c) => {
+  const latestCandle = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).first()
+
+  const latestSignals = await c.env.DB.prepare(`
+    SELECT * FROM gold10_signals
+    ORDER BY timestamp DESC
+    LIMIT 10
+  `).all()
+
+  return c.json({
+    candle: latestCandle,
+    signals: latestSignals.results
+  })
+})
+
+// サインデータを取得
+app.get('/api/gold10/signals', async (c) => {
+  const hoursParam = c.req.query('hours') || '3'
+  const hours = parseInt(hoursParam)
+  const timeLimit = Math.floor(Date.now() / 1000) - (hours * 3600)
+  
+  const signals = await c.env.DB.prepare(`
+    SELECT * FROM gold10_signals
+    WHERE timestamp >= ?
+    ORDER BY timestamp ASC
+  `).bind(timeLimit).all()
+
+  return c.json(signals.results)
+})
+
+// 新しいローソク足とサインを生成（管理用エンドポイント - 本番では定期実行）
+app.post('/api/gold10/generate', async (c) => {
+  // 最新のローソク足を取得
+  const latestCandle = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).first() as Candle | null
+
+  // 最新のサインを取得
+  const latestSignal = await c.env.DB.prepare(`
+    SELECT * FROM gold10_signals
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).first() as Signal | null
+
+  // 新しいローソク足を生成
+  const newCandle = generateCandle(latestCandle, 4950)
+
+  // ローソク足をDBに保存
+  const insertResult = await c.env.DB.prepare(`
+    INSERT INTO gold10_candles (timestamp, open, high, low, close)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(
+    newCandle.timestamp,
+    newCandle.open,
+    newCandle.high,
+    newCandle.low,
+    newCandle.close
+  ).run()
+
+  const candleId = insertResult.meta.last_row_id
+
+  // 過去14本のローソク足を取得してRSIを計算
+  const recentCandles = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles
+    ORDER BY timestamp DESC
+    LIMIT 15
+  `).all()
+
+  const candlesForRSI = recentCandles.results.reverse() as Candle[]
+  const rsi = calculateRSI(candlesForRSI, 14)
+
+  // RSIを更新
+  await c.env.DB.prepare(`
+    UPDATE gold10_candles SET rsi = ? WHERE id = ?
+  `).bind(rsi, candleId).run()
+
+  // サイン生成判定
+  let newSignal: Signal | null = null
+  const lastSignalTime = latestSignal ? latestSignal.timestamp : null
+  
+  if (shouldGenerateSignal(lastSignalTime)) {
+    newSignal = generateSignal({ ...newCandle, rsi }, candleId as number, rsi)
+    
+    // サインをDBに保存
+    await c.env.DB.prepare(`
+      INSERT INTO gold10_signals (candle_id, timestamp, type, price, target_price, success, rsi)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      newSignal.candle_id,
+      newSignal.timestamp,
+      newSignal.type,
+      newSignal.price,
+      newSignal.target_price,
+      newSignal.success,
+      newSignal.rsi
+    ).run()
+  }
+
+  return c.json({
+    candle: { ...newCandle, id: candleId, rsi },
+    signal: newSignal,
+    message: '新しいローソク足とサインを生成しました'
+  })
+})
+
+// 初期データ生成（初回のみ実行）
+app.post('/api/gold10/initialize', async (c) => {
+  // 既存データを確認
+  const existingCount = await c.env.DB.prepare(`
+    SELECT COUNT(*) as count FROM gold10_candles
+  `).first()
+
+  if (existingCount && existingCount.count > 0) {
+    return c.json({ error: '既にデータが存在します', count: existingCount.count }, 400)
+  }
+
+  // 過去3時間分（180本）のローソク足を生成
+  const initialCandles = generateInitialCandles(180)
+
+  // バッチでDBに挿入
+  for (const candle of initialCandles) {
+    await c.env.DB.prepare(`
+      INSERT INTO gold10_candles (timestamp, open, high, low, close)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      candle.timestamp,
+      candle.open,
+      candle.high,
+      candle.low,
+      candle.close
+    ).run()
+  }
+
+  // 全ローソク足にRSIを計算
+  const allCandles = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles ORDER BY timestamp ASC
+  `).all()
+
+  const candlesArray = allCandles.results as Candle[]
+  
+  for (let i = 14; i < candlesArray.length; i++) {
+    const candlesForRSI = candlesArray.slice(i - 14, i + 1)
+    const rsi = calculateRSI(candlesForRSI, 14)
+    
+    await c.env.DB.prepare(`
+      UPDATE gold10_candles SET rsi = ? WHERE id = ?
+    `).bind(rsi, candlesArray[i].id).run()
+  }
+
+  return c.json({ 
+    success: true, 
+    message: '初期データを生成しました',
+    candleCount: initialCandles.length
+  })
+})
+
 // ========== ユーザーAPI ==========
 
 // ユーザー名更新
@@ -745,9 +938,11 @@ app.get('/trade', (c) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GOLD取引</title>
+    <title>GOLD10取引</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Lightweight Charts CDN -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         @keyframes slideIn {
             from { transform: translateY(-100%); opacity: 0; }
@@ -759,13 +954,26 @@ app.get('/trade', (c) => {
         }
         .notification-enter { animation: slideIn 0.3s ease-out; }
         .notification-exit { animation: slideOut 0.3s ease-out; }
+        
+        /* チャート用スタイル */
+        #chartContainer {
+            position: relative;
+            width: 100%;
+            height: 600px;
+        }
+        #rsiContainer {
+            position: relative;
+            width: 100%;
+            height: 150px;
+            margin-top: 10px;
+        }
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-100 overflow-hidden">
     <!-- ヘッダー -->
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold"><i class="fas fa-coins mr-2"></i>GOLD取引</h1>
+            <h1 class="text-xl font-bold"><i class="fas fa-coins mr-2"></i>GOLD10取引</h1>
             <nav class="flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
@@ -790,119 +998,164 @@ app.get('/trade', (c) => {
         </div>
     </div>
 
-    <div class="container mx-auto p-4 max-w-md">
-        <!-- 残高表示 -->
-        <div class="bg-white rounded-lg shadow-md p-4 mb-4">
-            <div class="flex justify-between items-center mb-2">
-                <span class="text-gray-600 text-sm">残高</span>
-                <span class="text-gray-600 text-sm">総損益</span>
+    <!-- メインコンテンツ: 2カラムレイアウト -->
+    <div class="flex h-[calc(100vh-72px)]">
+        <!-- 左側: GOLD10チャート -->
+        <div class="w-2/3 bg-white p-4 overflow-y-auto border-r border-gray-300">
+            <div class="mb-4">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">
+                    <i class="fas fa-chart-candlestick mr-2 text-yellow-600"></i>
+                    GOLD10 練習チャート
+                </h2>
+                <p class="text-sm text-gray-600">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    過去3時間分の1分足ローソク足チャート（全ユーザー共通）
+                </p>
             </div>
-            <div class="flex justify-between items-center">
-                <span id="balance" class="text-2xl font-bold text-gray-800">¥0</span>
-                <span id="totalProfit" class="text-xl font-bold">¥0</span>
-            </div>
-            <div class="text-center mt-2">
-                <button onclick="toggleReset()" class="text-sm text-gray-500 hover:text-gray-700">
-                    残高リセット
-                </button>
-            </div>
-        </div>
-
-        <!-- 金価格表示 -->
-        <div class="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-lg shadow-md p-6 mb-4">
-            <div class="text-center">
-                <h2 class="text-sm text-gray-600 mb-2">GOLD (XAU/USD)</h2>
-                <div id="goldPrice" class="text-5xl font-bold text-yellow-700 mb-2">$0.00</div>
-                <div class="text-sm text-gray-600">
-                    USD/JPY: <span id="usdJpy">¥152.96</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- 購入金額 -->
-        <div class="bg-white rounded-lg shadow-md p-4 mb-4">
-            <label class="block text-gray-700 font-medium mb-3">購入金額</label>
             
-            <div class="flex items-center justify-between mb-4">
-                <button onclick="decreaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
-                    −
-                </button>
-                <input 
-                    type="number" 
-                    id="amount" 
-                    value="1" 
-                    step="1" 
-                    min="1"
-                    max="3"
-                    class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
-                />
-                <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
-                    +
-                </button>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-                <button onclick="setAmount(1)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">1</button>
-                <button onclick="setAmount(2)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">2</button>
-                <button onclick="setAmount(3)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">3</button>
-            </div>
-        </div>
-
-        <!-- 売買ボタン -->
-        <div class="grid grid-cols-2 gap-3 mb-4">
-            <button onclick="openPosition('BUY')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg">
-                <i class="fas fa-arrow-up mr-2"></i>買う
-            </button>
-            <button onclick="openPosition('SELL')" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-4 rounded-lg shadow-lg">
-                <i class="fas fa-arrow-down mr-2"></i>売る
-            </button>
-        </div>
-
-        <!-- オープンポジション表示 -->
-        <div id="openPositions" class="mt-4 space-y-3"></div>
-
-        <!-- AIアドバイス -->
-        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mt-4 rounded">
-            <div class="flex items-start">
-                <i class="fas fa-lightbulb text-blue-500 text-xl mr-3 mt-1"></i>
-                <div>
-                    <h3 class="font-bold text-blue-800 mb-1">AIアドバイス</h3>
-                    <p class="text-sm text-blue-700">ポジションを開いてトレードを始めましょう！</p>
+            <!-- 現在価格表示 -->
+            <div class="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-lg shadow-md p-4 mb-4">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h3 class="text-sm text-gray-600 mb-1">GOLD10 現在価格</h3>
+                        <div id="gold10Price" class="text-4xl font-bold text-yellow-700">$0.00</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm text-gray-600">RSI (14)</div>
+                        <div id="gold10RSI" class="text-2xl font-bold text-blue-600">--</div>
+                    </div>
                 </div>
             </div>
-        </div>
-
-        <!-- オンラインチャット -->
-        <div class="bg-white rounded-lg shadow-md mt-4">
-            <button onclick="toggleChat()" class="w-full flex items-center justify-between p-4 text-gray-700 hover:text-gray-900">
-                <div class="flex items-center">
-                    <i class="fas fa-comments mr-2"></i>
-                    <span>オンラインチャット</span>
-                </div>
-                <i id="chatToggleIcon" class="fas fa-chevron-down"></i>
-            </button>
             
-            <!-- チャットエリア -->
-            <div id="chatArea" class="hidden border-t border-gray-200">
-                <div id="chatMessages" class="h-64 overflow-y-auto p-4 space-y-2 bg-gray-50">
-                    <p class="text-center text-gray-500 text-sm">読み込み中...</p>
+            <!-- ローソク足チャート -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+                <h3 class="text-lg font-bold mb-2 text-gray-700">
+                    <i class="fas fa-chart-line mr-2"></i>価格チャート
+                </h3>
+                <div id="chartContainer"></div>
+            </div>
+            
+            <!-- RSIチャート -->
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <h3 class="text-lg font-bold mb-2 text-gray-700">
+                    <i class="fas fa-chart-area mr-2"></i>RSI インジケーター
+                </h3>
+                <div id="rsiContainer"></div>
+            </div>
+        </div>
+
+        <!-- 右側: 取引UI -->
+        <div class="w-1/3 bg-gray-50 p-4 overflow-y-auto">
+            <!-- 残高表示 -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-gray-600 text-sm">残高</span>
+                    <span class="text-gray-600 text-sm">総損益</span>
                 </div>
-                <div class="p-4 bg-white border-t border-gray-200">
-                    <form id="chatForm" class="flex space-x-2">
-                        <input 
-                            type="text" 
-                            id="chatInput" 
-                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-sm"
-                            placeholder="メッセージを入力..."
-                            required
-                        />
-                        <button 
-                            type="submit"
-                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-bold text-sm"
-                        >
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
-                    </form>
+                <div class="flex justify-between items-center">
+                    <span id="balance" class="text-2xl font-bold text-gray-800">¥0</span>
+                    <span id="totalProfit" class="text-xl font-bold">¥0</span>
+                </div>
+                <div class="text-center mt-2">
+                    <button onclick="toggleReset()" class="text-sm text-gray-500 hover:text-gray-700">
+                        残高リセット
+                    </button>
+                </div>
+            </div>
+
+            <!-- 購入金額 -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+                <label class="block text-gray-700 font-medium mb-3">購入ロット数</label>
+                
+                <div class="flex items-center justify-between mb-4">
+                    <button onclick="decreaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
+                        −
+                    </button>
+                    <input 
+                        type="number" 
+                        id="amount" 
+                        value="1" 
+                        step="1" 
+                        min="1"
+                        max="3"
+                        class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
+                    />
+                    <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
+                        +
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="setAmount(1)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">1 lot</button>
+                    <button onclick="setAmount(2)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">2 lot</button>
+                    <button onclick="setAmount(3)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300">3 lot</button>
+                </div>
+            </div>
+
+            <!-- 売買ボタン -->
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <button onclick="openPosition('BUY')" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-4 rounded-lg shadow-lg">
+                    <i class="fas fa-arrow-up mr-2"></i>買う
+                </button>
+                <button onclick="openPosition('SELL')" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold py-4 rounded-lg shadow-lg">
+                    <i class="fas fa-arrow-down mr-2"></i>売る
+                </button>
+            </div>
+
+            <!-- オープンポジション表示 -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-4">
+                <h3 class="text-lg font-bold mb-3 text-gray-700">
+                    <i class="fas fa-list mr-2"></i>保有ポジション
+                </h3>
+                <div id="openPositions" class="space-y-3"></div>
+            </div>
+
+            <!-- AIアドバイス -->
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded">
+                <div class="flex items-start">
+                    <i class="fas fa-lightbulb text-blue-500 text-xl mr-3 mt-1"></i>
+                    <div>
+                        <h3 class="font-bold text-blue-800 mb-1">取引のヒント</h3>
+                        <p class="text-sm text-blue-700">
+                            サインが出たら3本後のローソク足で反転の可能性あり！<br>
+                            RSI 35-65の範囲でサインの勝率UP！
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- オンラインチャット -->
+            <div class="bg-white rounded-lg shadow-md">
+                <button onclick="toggleChat()" class="w-full flex items-center justify-between p-4 text-gray-700 hover:text-gray-900">
+                    <div class="flex items-center">
+                        <i class="fas fa-comments mr-2"></i>
+                        <span>オンラインチャット</span>
+                    </div>
+                    <i id="chatToggleIcon" class="fas fa-chevron-down"></i>
+                </button>
+                
+                <!-- チャットエリア -->
+                <div id="chatArea" class="hidden border-t border-gray-200">
+                    <div id="chatMessages" class="h-64 overflow-y-auto p-4 space-y-2 bg-gray-50">
+                        <p class="text-center text-gray-500 text-sm">読み込み中...</p>
+                    </div>
+                    <div class="p-4 bg-white border-t border-gray-200">
+                        <form id="chatForm" class="flex space-x-2">
+                            <input 
+                                type="text" 
+                                id="chatInput" 
+                                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 text-sm"
+                                placeholder="メッセージを入力..."
+                                required
+                            />
+                            <button 
+                                type="submit"
+                                class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-bold text-sm"
+                            >
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -910,6 +1163,217 @@ app.get('/trade', (c) => {
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
+        // ========== GOLD10チャート関連 ==========
+        let chart = null;
+        let candlestickSeries = null;
+        let rsiChart = null;
+        let rsiLineSeries = null;
+        let signalMarkers = [];
+        
+        // Lightweight Chartsの初期化
+        function initializeCharts() {
+            // メインチャート（ローソク足）
+            chart = LightweightCharts.createChart(document.getElementById('chartContainer'), {
+                width: document.getElementById('chartContainer').clientWidth,
+                height: 600,
+                layout: {
+                    background: { color: '#ffffff' },
+                    textColor: '#333',
+                },
+                grid: {
+                    vertLines: { color: '#f0f0f0' },
+                    horzLines: { color: '#f0f0f0' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350',
+            });
+
+            // RSIチャート
+            rsiChart = LightweightCharts.createChart(document.getElementById('rsiContainer'), {
+                width: document.getElementById('rsiContainer').clientWidth,
+                height: 150,
+                layout: {
+                    background: { color: '#ffffff' },
+                    textColor: '#333',
+                },
+                grid: {
+                    vertLines: { color: '#f0f0f0' },
+                    horzLines: { color: '#f0f0f0' },
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            rsiLineSeries = rsiChart.addLineSeries({
+                color: '#2962FF',
+                lineWidth: 2,
+            });
+
+            // RSIの70と30のライン
+            const rsiUpperLine = rsiChart.addLineSeries({
+                color: '#ff6b6b',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+            });
+            
+            const rsiLowerLine = rsiChart.addLineSeries({
+                color: '#4ecdc4',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+            });
+
+            // ウィンドウリサイズ対応
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ 
+                    width: document.getElementById('chartContainer').clientWidth 
+                });
+                rsiChart.applyOptions({ 
+                    width: document.getElementById('rsiContainer').clientWidth 
+                });
+            });
+        }
+
+        // GOLD10データを読み込んでチャートに表示
+        async function loadGold10Chart() {
+            try {
+                // 過去3時間分のローソク足データを取得
+                const candlesResponse = await axios.get('/api/gold10/candles?hours=3');
+                const candles = candlesResponse.data;
+
+                // サインデータを取得
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=3');
+                const signals = signalsResponse.data;
+
+                // ローソク足データをLightweight Charts形式に変換
+                const candleData = candles.map(c => ({
+                    time: c.timestamp,
+                    open: c.open,
+                    high: c.high,
+                    low: c.low,
+                    close: c.close
+                }));
+
+                // RSIデータを抽出
+                const rsiData = candles
+                    .filter(c => c.rsi !== null)
+                    .map(c => ({
+                        time: c.timestamp,
+                        value: c.rsi
+                    }));
+
+                // チャートにデータをセット
+                if (candleData.length > 0) {
+                    candlestickSeries.setData(candleData);
+                    
+                    // 最新価格を表示
+                    const latestCandle = candles[candles.length - 1];
+                    if (latestCandle) {
+                        document.getElementById('gold10Price').textContent = 
+                            '$' + latestCandle.close.toFixed(2);
+                        document.getElementById('gold10RSI').textContent = 
+                            latestCandle.rsi ? latestCandle.rsi.toFixed(1) : '--';
+                        
+                        // RSI色分け
+                        const rsiEl = document.getElementById('gold10RSI');
+                        if (latestCandle.rsi >= 70) {
+                            rsiEl.className = 'text-2xl font-bold text-red-600';
+                        } else if (latestCandle.rsi <= 30) {
+                            rsiEl.className = 'text-2xl font-bold text-green-600';
+                        } else {
+                            rsiEl.className = 'text-2xl font-bold text-blue-600';
+                        }
+                    }
+                }
+
+                if (rsiData.length > 0) {
+                    rsiLineSeries.setData(rsiData);
+                }
+
+                // サインをマーカーとして表示
+                if (signals.length > 0) {
+                    const markers = signals.map(signal => ({
+                        time: signal.timestamp,
+                        position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
+                        color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
+                        shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
+                        text: signal.type === 'BUY' ? '買サイン' : '売サイン',
+                    }));
+                    candlestickSeries.setMarkers(markers);
+                    signalMarkers = markers;
+                }
+
+            } catch (error) {
+                console.error('チャートデータ取得エラー:', error);
+            }
+        }
+
+        // チャートをリアルタイム更新
+        async function updateGold10Chart() {
+            try {
+                const response = await axios.get('/api/gold10/latest');
+                const { candle, signals } = response.data;
+
+                if (candle) {
+                    // 最新ローソク足を更新
+                    candlestickSeries.update({
+                        time: candle.timestamp,
+                        open: candle.open,
+                        high: candle.high,
+                        low: candle.low,
+                        close: candle.close
+                    });
+
+                    // RSI更新
+                    if (candle.rsi !== null) {
+                        rsiLineSeries.update({
+                            time: candle.timestamp,
+                            value: candle.rsi
+                        });
+                    }
+
+                    // 現在価格表示を更新
+                    document.getElementById('gold10Price').textContent = 
+                        '$' + candle.close.toFixed(2);
+                    document.getElementById('gold10RSI').textContent = 
+                        candle.rsi ? candle.rsi.toFixed(1) : '--';
+                    
+                    // currentPriceもGOLD10価格に更新
+                    currentPrice = candle.close;
+                }
+
+                // 新しいサインがあればマーカーを追加
+                if (signals && signals.length > 0) {
+                    const newMarkers = signals.slice(0, 10).map(signal => ({
+                        time: signal.timestamp,
+                        position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
+                        color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
+                        shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
+                        text: signal.type === 'BUY' ? '買サイン' : '売サイン',
+                    }));
+                    candlestickSeries.setMarkers(newMarkers);
+                }
+
+            } catch (error) {
+                console.error('チャート更新エラー:', error);
+            }
+        }
+
+        // ========== 既存のトレード機能 ==========
         let currentPrice = 0;
         let openPositions = [];
         let currentUserId = null;
@@ -1188,17 +1652,27 @@ app.get('/trade', (c) => {
         // 初期化
         (async () => {
             await loadUserData();
-            await updateGoldPrice();
+            // GOLD10チャートを初期化
+            initializeCharts();
+            await loadGold10Chart();
             await loadOpenPositions();
         })();
         
-        // 価格を5秒ごとに更新（30秒ごとに実価格取得、その間は±10円変動）
+        // GOLD10チャートを30秒ごとに更新（新しいローソク足とサイン生成）
         setInterval(async () => {
-            await updateGoldPrice();  // 価格更新を待つ
+            // サーバー側で新しいローソク足を生成
+            await axios.post('/api/gold10/generate').catch(err => {
+                console.log('ローソク足生成:', err.response?.status === 500 ? 'スキップ' : err.message);
+            });
+            
+            // チャートを更新
+            await updateGold10Chart();
+            
+            // 保有ポジションの損益も更新
             if (openPositions.length > 0) {
-                displayOpenPositions();  // 更新された価格で表示
+                displayOpenPositions();
             }
-        }, 5000);
+        }, 30000);  // 30秒ごと
 
         // チャットが開いている場合は5秒ごとに更新
         setInterval(() => {
