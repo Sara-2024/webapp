@@ -1162,15 +1162,17 @@ app.get('/trade', (c) => {
         }
 
         // 初期化
-        loadUserData();
-        updateGoldPrice();
-        loadOpenPositions();
+        (async () => {
+            await loadUserData();
+            await updateGoldPrice();
+            await loadOpenPositions();
+        })();
         
         // 価格を5秒ごとに更新（よりリアルタイムに）
-        setInterval(() => {
-            updateGoldPrice();
+        setInterval(async () => {
+            await updateGoldPrice();  // 価格更新を待つ
             if (openPositions.length > 0) {
-                displayOpenPositions();
+                displayOpenPositions();  // 更新された価格で表示
             }
         }, 5000);
 
