@@ -124,20 +124,20 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
 
 /**
  * 反転サインを生成すべきか判定
- * - 1時間に3-5回のサイン発生
- * - つまり12-20分に1回程度
+ * - 1時間に約2.7回のサイン発生
+ * - つまり17-28分に1回程度
  */
 export function shouldGenerateSignal(lastSignalTime: number | null): boolean {
   const now = Math.floor(Date.now() / 1000)
   
   if (!lastSignalTime) {
-    // 初回は20%の確率で生成
-    return Math.random() < 0.2
+    // 初回は15%の確率で生成
+    return Math.random() < 0.15
   }
 
   const timeSinceLastSignal = now - lastSignalTime
-  const minInterval = 12 * 60  // 12分
-  const maxInterval = 20 * 60  // 20分
+  const minInterval = 17 * 60  // 17分
+  const maxInterval = 28 * 60  // 28分
 
   // 最小間隔を超えていない場合は生成しない
   if (timeSinceLastSignal < minInterval) {
@@ -149,7 +149,7 @@ export function shouldGenerateSignal(lastSignalTime: number | null): boolean {
     return true
   }
 
-  // 12-20分の間は徐々に確率が上がる
+  // 17-28分の間は徐々に確率が上がる
   const probability = (timeSinceLastSignal - minInterval) / (maxInterval - minInterval)
   return Math.random() < probability
 }
@@ -223,22 +223,20 @@ export function generateInitialCandles(count: number = 720): Candle[] {
 /**
  * 初期サインデータ生成
  * - 12時間分のローソク足から、反転しそうなポイントにサインを生成
- * - 1時間あたり3-5回のサイン（合計36-60回）
+ * - 1時間あたり約2.7回のサイン（合計約32回）
  * - candlesはDB IDを含む必要がある
  */
 export function generateInitialSignals(candles: Candle[]): Signal[] {
   const signals: Signal[] = []
-  const totalHours = candles.length / 60  // 720本 = 12時間
-  const avgSignalsPerHour = 4  // 1時間あたり平均4回
   
   // サイン発生間隔（分）の配列を生成
   const signalIntervals: number[] = []
-  let currentIndex = Math.floor(Math.random() * 20) + 10  // 最初のサインは10-30分後
+  let currentIndex = Math.floor(Math.random() * 30) + 15  // 最初のサインは15-45分後
   
   while (currentIndex < candles.length - 10) {
     signalIntervals.push(currentIndex)
-    // 次のサインまで12-20分（ランダム）
-    currentIndex += Math.floor(Math.random() * 9) + 12
+    // 次のサインまで17-28分（ランダム）、平均22.5分
+    currentIndex += Math.floor(Math.random() * 12) + 17
   }
   
   // 各サイン発生ポイントでサインを生成
