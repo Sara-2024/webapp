@@ -5,6 +5,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 
 type Bindings = {
   DB: D1Database
+  ALPHA_VANTAGE_API_KEY?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -25,12 +26,37 @@ function generateRandomUsername(): string {
   return `${adj}${noun}${num}`
 }
 
-// ユーティリティ関数：現在の金価格を取得（デモ用のダミー価格）
-function getCurrentGoldPrice(): number {
-  // 実際の価格APIを使用する場合はここで呼び出す
-  // デモ用に4900～5100の範囲でランダムな価格を返す
-  return 4900 + Math.random() * 200
+// ユーティリティ関数：現在の金価格を取得（Alpha Vantage API使用）
+async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
+  if (!apiKey) {
+    // API Keyが設定されていない場合はダミー価格を返す
+    return 2600 + Math.random() * 100
+  }
+
+  try {
+    // Alpha Vantage FX APIでXAUUSDの価格を取得
+    const response = await fetch(
+      `https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=XAU&to_currency=USD&apikey=${apiKey}`
+    )
+    const data = await response.json()
+    
+    if (data['Realtime Currency Exchange Rate']) {
+      const price = parseFloat(data['Realtime Currency Exchange Rate']['5. Exchange Rate'])
+      return price
+    }
+    
+    // エラーの場合はダミー価格
+    return 2600 + Math.random() * 100
+  } catch (error) {
+    console.error('Alpha Vantage API error:', error)
+    return 2600 + Math.random() * 100
+  }
 }
+
+// キャッシュ用の価格データ
+let cachedGoldPrice = 2650.0
+let lastPriceUpdate = 0
+const PRICE_CACHE_DURATION = 60000 // 1分間キャッシュ（API制限対策）
 
 // ユーティリティ関数：ポイント付与
 async function addPoints(db: D1Database, userId: number, points: number, type: string, description: string) {
@@ -157,13 +183,47 @@ app.get('/api/auth/me', async (c) => {
 // ========== トレードAPI ==========
 
 // 現在の金価格取得
-app.get('/api/trade/gold-price', (c) => {
-  const price = getCurrentGoldPrice()
-  return c.json({ 
-    price: price.toFixed(2),
-    usdJpy: 152.96,
-    timestamp: new Date().toISOString()
-  })
+app.get('/api/trade/gold-price', async (c) => {
+  const now = Date.now()
+  
+  // キャッシュが有効な場合はキャッシュから返す
+  if (now - lastPriceUpdate < PRICE_CACHE_DURATION) {
+    // キャッシュ価格に小さな変動を追加（リアルタイム感を出すため）
+    const variation = (Math.random() - 0.5) * 2
+    const price = cachedGoldPrice + variation
+    
+    return c.json({ 
+      price: price.toFixed(2),
+      usdJpy: 152.96,
+      timestamp: new Date().toISOString(),
+      cached: true
+    })
+  }
+  
+  // Alpha Vantage API Keyを環境変数から取得
+  const apiKey = c.env.ALPHA_VANTAGE_API_KEY || ''
+  
+  try {
+    const price = await getCurrentGoldPrice(apiKey)
+    cachedGoldPrice = price
+    lastPriceUpdate = now
+    
+    return c.json({ 
+      price: price.toFixed(2),
+      usdJpy: 152.96,
+      timestamp: new Date().toISOString(),
+      cached: false
+    })
+  } catch (error) {
+    // エラー時はキャッシュまたはダミー価格
+    return c.json({ 
+      price: cachedGoldPrice.toFixed(2),
+      usdJpy: 152.96,
+      timestamp: new Date().toISOString(),
+      cached: true,
+      error: 'API呼び出しエラー'
+    })
+  }
 })
 
 // ポジション開く（買う/売る）
@@ -179,7 +239,9 @@ app.post('/api/trade/open', async (c) => {
     return c.json({ error: '無効な取引タイプ' }, 400)
   }
 
-  const entryPrice = getCurrentGoldPrice()
+  // API Keyを環境変数から取得
+  const apiKey = c.env.ALPHA_VANTAGE_API_KEY || ''
+  const entryPrice = await getCurrentGoldPrice(apiKey)
 
   const result = await c.env.DB.prepare(`
     INSERT INTO trades (user_id, type, amount, entry_price, status)
@@ -212,12 +274,14 @@ app.post('/api/trade/close/:tradeId', async (c) => {
     return c.json({ error: '取引が見つかりません' }, 404)
   }
 
-  const exitPrice = getCurrentGoldPrice()
+  // API Keyを環境変数から取得
+  const apiKey = c.env.ALPHA_VANTAGE_API_KEY || ''
+  const exitPrice = await getCurrentGoldPrice(apiKey)
   const entryPrice = trade.entry_price as number
   const amount = trade.amount as number
   const type = trade.type as string
 
-  // 損益計算（簡易版）
+  // 損益計算（XAUUSDの場合、1ozあたりの価格差）
   let profitLoss = 0
   if (type === 'BUY') {
     profitLoss = (exitPrice - entryPrice) * amount * 152.96 // USD/JPY換算
