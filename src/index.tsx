@@ -1087,9 +1087,6 @@ app.get('/trade', (c) => {
             
             <!-- RSIチャート -->
             <div class="bg-white rounded-lg shadow-md p-4">
-                <h3 class="text-lg font-bold mb-2 text-gray-700">
-                    <i class="fas fa-chart-area mr-2"></i>RSI インジケーター
-                </h3>
                 <div id="rsiContainer"></div>
             </div>
         </div>
