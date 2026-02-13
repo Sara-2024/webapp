@@ -97,31 +97,28 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
     open = basePrice
   }
 
-  // トレンド方向をランダムに決定（上昇60%、下降40%）
-  const isUptrend = Math.random() > 0.4
+  // トレンド方向をランダムに決定（上昇50%、下降50%）
+  const isUptrend = Math.random() > 0.5
 
-  // 価格変動幅（$1-$15の範囲）
-  const priceMove = 1 + Math.random() * 14
+  // 価格変動幅（$2-$20の範囲でより波打つ）
+  const priceMove = 2 + Math.random() * 18
 
   if (isUptrend) {
-    close = open + priceMove * (0.3 + Math.random() * 0.7)
-    high = Math.max(open, close) + Math.random() * 3
-    low = Math.min(open, close) - Math.random() * 2
-  } else {
-    close = open - priceMove * (0.3 + Math.random() * 0.7)
-    high = Math.max(open, close) + Math.random() * 2
+    close = open + priceMove * (0.2 + Math.random() * 0.8)
+    high = Math.max(open, close) + Math.random() * 5
     low = Math.min(open, close) - Math.random() * 3
+  } else {
+    close = open - priceMove * (0.2 + Math.random() * 0.8)
+    high = Math.max(open, close) + Math.random() * 3
+    low = Math.min(open, close) - Math.random() * 5
   }
-
-  // 価格範囲を$4,900-$5,100に制限
-  const clamp = (val: number) => Math.max(4900, Math.min(5100, val))
   
   return {
     timestamp,
-    open: clamp(open),
-    high: clamp(high),
-    low: clamp(low),
-    close: clamp(close)
+    open,
+    high,
+    low,
+    close
   }
 }
 
