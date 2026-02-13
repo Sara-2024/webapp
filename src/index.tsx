@@ -57,7 +57,7 @@ async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
 // キャッシュ用の価格データ
 let cachedGoldPrice = 4950.0
 let lastPriceUpdate = 0
-const PRICE_CACHE_DURATION = 60000 // 1分間キャッシュ（API制限対策）
+const PRICE_CACHE_DURATION = 10000 // 10秒間キャッシュ（よりリアルタイムに）
 
 // ユーティリティ関数：ポイント付与
 async function addPoints(db: D1Database, userId: number, points: number, type: string, description: string) {
@@ -187,10 +187,10 @@ app.get('/api/auth/me', async (c) => {
 app.get('/api/trade/gold-price', async (c) => {
   const now = Date.now()
   
-  // キャッシュが有効な場合はキャッシュから返す
+  // キャッシュが有効な場合でも、よりリアルな変動を追加
   if (now - lastPriceUpdate < PRICE_CACHE_DURATION) {
-    // キャッシュ価格に小さな変動を追加（リアルタイム感を出すため）
-    const variation = (Math.random() - 0.5) * 2
+    // キャッシュ価格にリアルな変動を追加（-5～+5ドル）
+    const variation = (Math.random() - 0.5) * 10
     const price = cachedGoldPrice + variation
     
     return c.json({ 
@@ -1153,13 +1153,13 @@ app.get('/trade', (c) => {
         updateGoldPrice();
         loadOpenPositions();
         
-        // 価格を3秒ごとに更新
+        // 価格を5秒ごとに更新（よりリアルタイムに）
         setInterval(() => {
             updateGoldPrice();
             if (openPositions.length > 0) {
                 displayOpenPositions();
             }
-        }, 3000);
+        }, 5000);
 
         // チャットが開いている場合は5秒ごとに更新
         setInterval(() => {
