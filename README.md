@@ -26,8 +26,8 @@
 
 ## URL
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
-- **本番環境**: https://69f29875.webapp-303.pages.dev
-- **管理者ページ**: https://69f29875.webapp-303.pages.dev/admin-login
+- **本番環境**: https://3b9967c8.webapp-303.pages.dev
+- **管理者ページ**: https://3b9967c8.webapp-303.pages.dev/admin-login
 
 ## ローソク足自動生成（重要）
 
@@ -36,7 +36,7 @@
 **解決策**: 外部Cronサービスから1分ごとに以下のURLを呼び出してください：
 
 ```
-https://69f29875.webapp-303.pages.dev/api/gold10/generate
+https://3b9967c8.webapp-303.pages.dev/api/gold10/generate
 ```
 
 ### 推奨Cronサービス
@@ -60,7 +60,7 @@ https://69f29875.webapp-303.pages.dev/api/gold10/generate
 2. "Create cronjob"をクリック
 3. 以下を設定：
    - Title: GOLD10 Candle Generator
-   - URL: https://69f29875.webapp-303.pages.dev/api/gold10/generate
+   - URL: https://3b9967c8.webapp-303.pages.dev/api/gold10/generate
    - Schedule: Every 1 minute
 4. "Create"をクリック
 
