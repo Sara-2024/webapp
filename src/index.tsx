@@ -1357,28 +1357,10 @@ app.get('/trade', (c) => {
             <div class="bg-white rounded-lg shadow-md p-4 mb-4">
                 <label class="block text-gray-700 font-medium mb-3">購入ロット数</label>
                 
-                <div class="flex items-center justify-between mb-4">
-                    <button onclick="decreaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
-                        −
-                    </button>
-                    <input 
-                        type="number" 
-                        id="amount" 
-                        value="1" 
-                        step="0.5" 
-                        min="0.5"
-                        max="2"
-                        class="flex-1 mx-4 text-center text-2xl font-bold border-2 border-gray-300 rounded-lg p-2"
-                    />
-                    <button onclick="increaseAmount()" class="w-12 h-12 bg-gray-200 hover:bg-gray-300 rounded-lg text-xl font-bold">
-                        +
-                    </button>
-                </div>
-
-                <div class="grid grid-cols-3 gap-2">
-                    <button onclick="setAmount(0.5)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300 font-bold">0.5 lot</button>
-                    <button onclick="setAmount(1)" class="py-2 bg-blue-100 hover:bg-blue-200 rounded-lg border-2 border-blue-400 font-bold">1 lot</button>
-                    <button onclick="setAmount(2)" class="py-2 bg-gray-100 hover:bg-gray-200 rounded-lg border border-gray-300 font-bold">2 lot</button>
+                <div class="text-center mb-4">
+                    <div class="py-3 bg-blue-100 rounded-lg border-2 border-blue-400">
+                        <span class="text-lg font-bold text-blue-800">1 lot 固定</span>
+                    </div>
                 </div>
             </div>
 
@@ -1829,11 +1811,13 @@ app.get('/trade', (c) => {
         }
 
         async function openPosition(type) {
-            const amount = parseFloat(document.getElementById('amount').value);
-            if (amount <= 0) {
-                alert('金額を入力してください');
+            // ポジション数制限チェック
+            if (openPositions.length >= 3) {
+                alert('最大ポジション数（3つ）に達しています。既存のポジションを決済してください。');
                 return;
             }
+
+            const amount = 1; // 1ロット固定
 
             try {
                 const response = await axios.post('/api/trade/open', { type, amount });
@@ -1862,38 +1846,6 @@ app.get('/trade', (c) => {
                 }
             } catch (error) {
                 alert('決済に失敗しました');
-            }
-        }
-
-        function setAmount(value) {
-            document.getElementById('amount').value = value;
-        }
-
-        function increaseAmount() {
-            const input = document.getElementById('amount');
-            const current = parseFloat(input.value);
-            if (current < 0.5) {
-                input.value = 0.5;
-            } else if (current < 1) {
-                input.value = 1;
-            } else if (current < 2) {
-                input.value = 2;
-            } else {
-                input.value = 0.5; // 2の次は0.5に戻る
-            }
-        }
-
-        function decreaseAmount() {
-            const input = document.getElementById('amount');
-            const current = parseFloat(input.value);
-            if (current > 2) {
-                input.value = 2;
-            } else if (current > 1) {
-                input.value = 1;
-            } else if (current > 0.5) {
-                input.value = 0.5;
-            } else {
-                input.value = 2; // 0.5の前は2に戻る
             }
         }
 
@@ -2032,7 +1984,7 @@ app.get('/trade', (c) => {
             await loadOpenPositions();
         })();
         
-        // GOLD10チャートを30秒ごとに更新（新しいローソク足とサイン生成）
+        // GOLD10チャートを60秒ごとに更新（新しいローソク足とサイン生成）
         setInterval(async () => {
             // サーバー側で新しいローソク足を生成
             await axios.post('/api/gold10/generate').catch(err => {
@@ -2041,14 +1993,14 @@ app.get('/trade', (c) => {
             
             // チャートを更新
             await updateGold10Chart();
-        }, 30000);  // 30秒ごと
+        }, 60000);  // 60秒ごと（1分足）
 
-        // GOLD10価格と損益を10秒ごとに更新
+        // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
         setInterval(async () => {
             // 最新のGOLD10価格を取得して表示を更新
             await updateGoldPrice();
             
-            // チャートも更新
+            // チャートも更新（ローソク足の途中経過を反映）
             await updateGold10Chart();
             
             // 15分経過ポジションの自動決済チェック
