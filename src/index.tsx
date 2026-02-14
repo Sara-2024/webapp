@@ -958,8 +958,11 @@ app.post('/api/admin/gold10/reserve-signal', async (c) => {
   // 予約時刻を計算（UTC）
   const reserveTime = Math.floor(Date.now() / 1000) + (hours * 60 * 60)
 
-  // 予約をDBに保存（新しいテーブルが必要だが、簡易的にメモリで管理）
-  // TODO: 本番環境では専用テーブルを作成
+  // 予約をDBに保存
+  await c.env.DB.prepare(`
+    INSERT INTO gold10_signal_reservations (type, reserve_time)
+    VALUES (?, ?)
+  `).bind(type, reserveTime).run()
   
   return c.json({
     success: true,
@@ -973,16 +976,107 @@ app.post('/api/admin/gold10/reserve-signal', async (c) => {
   })
 })
 
-// 予約サイン一覧取得（簡易実装）
+// 予約サイン一覧取得
 app.get('/api/admin/gold10/reserved-signals', async (c) => {
   const adminId = getCookie(c, 'admin_id')
   if (!adminId) {
     return c.json({ error: '管理者権限が必要です' }, 403)
   }
 
-  // TODO: 本番環境では専用テーブルから取得
+  // 未実行の予約を取得（実行時刻が近い順）
+  const reservations = await c.env.DB.prepare(`
+    SELECT id, type, reserve_time, created_at
+    FROM gold10_signal_reservations
+    WHERE executed = 0
+    ORDER BY reserve_time ASC
+  `).all()
+
   return c.json({
-    reservations: []
+    reservations: reservations.results || []
+  })
+})
+
+// 予約サインを自動実行（Cron用 - モニターページから呼ばれる）
+app.post('/api/admin/gold10/execute-reservations', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  
+  // 実行時刻を過ぎた未実行の予約を取得
+  const dueReservations = await c.env.DB.prepare(`
+    SELECT id, type, reserve_time
+    FROM gold10_signal_reservations
+    WHERE executed = 0 AND reserve_time <= ?
+    ORDER BY reserve_time ASC
+  `).bind(now).all()
+
+  const executed = []
+  
+  for (const reservation of (dueReservations.results || [])) {
+    try {
+      // 最新のローソク足を取得
+      const latestCandle = await c.env.DB.prepare(`
+        SELECT * FROM gold10_candles
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `).first() as Candle | null
+
+      if (!latestCandle) {
+        continue
+      }
+
+      const rsi = latestCandle.rsi || 50
+      const price = latestCandle.close
+      
+      // ターゲット価格を計算
+      const targetPriceOffset = 4.5 + Math.random() * 1.0  // $4.5-$5.5
+      const targetPrice = reservation.type === 'BUY' 
+        ? price + targetPriceOffset 
+        : price - targetPriceOffset
+
+      // 勝率75%で成功フラグを設定
+      const success = Math.random() < 0.75
+
+      // サインをDBに保存
+      await c.env.DB.prepare(`
+        INSERT INTO gold10_signals (candle_id, timestamp, type, price, target_price, success, rsi)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        latestCandle.id,
+        now,
+        reservation.type,
+        price,
+        targetPrice,
+        success ? 1 : 0,
+        rsi
+      ).run()
+
+      // 予約を実行済みにマーク
+      await c.env.DB.prepare(`
+        UPDATE gold10_signal_reservations
+        SET executed = 1, executed_at = ?
+        WHERE id = ?
+      `).bind(now, reservation.id).run()
+
+      executed.push({
+        id: reservation.id,
+        type: reservation.type,
+        price,
+        targetPrice,
+        success
+      })
+    } catch (error) {
+      console.error('予約実行エラー:', error)
+    }
+  }
+
+  return c.json({
+    success: true,
+    executed: executed.length,
+    signals: executed
   })
 })
 
@@ -4149,6 +4243,27 @@ app.get('/admin-monitor', (c) => {
         }
 
         // タイマー開始
+        // 予約サイン実行チェック（1分ごと）
+        async function checkReservations() {
+            try {
+                const response = await axios.post('/api/admin/gold10/execute-reservations');
+                
+                if (response.data.executed > 0) {
+                    addLog(\`⏰ 予約サイン実行: \${response.data.executed}件のサインを生成しました\`, 'warning');
+                    
+                    // サイン詳細をログに追加
+                    response.data.signals.forEach(signal => {
+                        addLog(\`  - \${signal.type === 'BUY' ? '買い' : '売り'}サイン: $\${signal.price.toFixed(2)} (目標: $\${signal.targetPrice.toFixed(2)})\`, 'success');
+                    });
+                    
+                    // チャートを更新
+                    await updateLatestCandle();
+                }
+            } catch (error) {
+                console.error('予約チェックエラー:', error);
+            }
+        }
+
         async function startAutoGeneration() {
             // 初回実行
             addLog('自動生成タイマーを開始しました', 'success');
@@ -4166,6 +4281,11 @@ app.get('/admin-monitor', (c) => {
                 nextExecutionTime = calculateNextExecution();
                 await generateCandle();
             }, 30000);
+
+            // 予約サインを1分ごとにチェック
+            setInterval(checkReservations, 60000);
+            // 初回チェック
+            await checkReservations();
 
             // カウントダウンを1秒ごとに更新
             setInterval(updateCountdown, 1000);
