@@ -1512,6 +1512,15 @@ app.get('/trade', (c) => {
                 timeScale: {
                     timeVisible: true,
                     secondsVisible: false,
+                    rightOffset: 12,
+                    barSpacing: 6,
+                    fixLeftEdge: false,
+                    fixRightEdge: false,
+                    lockVisibleTimeRangeOnResize: false,
+                    rightBarStaysOnScroll: true,
+                    visible: true,
+                    timeVisible: true,
+                    secondsVisible: false,
                 },
                 localization: {
                     timeFormatter: (timestamp) => {
@@ -1622,6 +1631,14 @@ app.get('/trade', (c) => {
                 // チャートにデータをセット
                 if (candleData.length > 0) {
                     candlestickSeries.setData(candleData);
+                    
+                    // チャートの表示範囲を最新データに合わせる
+                    const latestTime = candleData[candleData.length - 1].time;
+                    const earliestTime = candleData[Math.max(0, candleData.length - 120)].time; // 最新120本（2時間分）を表示
+                    chart.timeScale().setVisibleRange({
+                        from: earliestTime,
+                        to: latestTime
+                    });
                     
                     // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
