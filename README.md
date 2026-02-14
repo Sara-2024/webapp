@@ -26,8 +26,8 @@
 
 ## URL
 - **開発環境**: https://3000-iuwg74237l68z4a0hnj15-5634da27.sandbox.novita.ai
-- **本番環境**: https://c2bb1272.webapp-303.pages.dev
-- **管理者ページ**: https://c2bb1272.webapp-303.pages.dev/admin-login
+- **本番環境**: https://14cecda4.webapp-303.pages.dev
+- **管理者ページ**: https://14cecda4.webapp-303.pages.dev/admin-login
 
 ## サインシステム
 
@@ -52,7 +52,7 @@
 **解決策**: 外部Cronサービスから1分ごとに以下のURLを呼び出してください：
 
 ```
-https://c2bb1272.webapp-303.pages.dev/api/gold10/generate
+https://14cecda4.webapp-303.pages.dev/api/gold10/generate
 ```
 
 ### 推奨Cronサービス
