@@ -3057,6 +3057,44 @@ app.get('/admin', (c) => {
                     </button>
                 </form>
             </div>
+            
+            <!-- 一括ユーザー登録フォーム -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-users mr-2 text-blue-500"></i>一括ユーザー登録
+                </h2>
+                <form id="bulkAddUserForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            ユーザーデータ（1行に1ユーザー：パスワード[タブまたはスペース]ユーザー名）
+                        </label>
+                        <textarea 
+                            id="bulkUserData" 
+                            rows="10"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                            placeholder="953170f	arinchu
+098610l	WAVE(吉田)
+531536o	イシマセイタ"
+                            required
+                        ></textarea>
+                        <p class="text-xs text-gray-500 mt-1">
+                            各行は「パスワード ユーザー名」の形式で入力してください（タブまたはスペース区切り）
+                        </p>
+                    </div>
+                    <button 
+                        type="submit"
+                        class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg"
+                    >
+                        <i class="fas fa-upload mr-2"></i>一括登録
+                    </button>
+                </form>
+                <div id="bulkAddResult" class="mt-4 hidden">
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                        <p class="font-bold">登録結果:</p>
+                        <p id="bulkAddMessage"></p>
+                    </div>
+                </div>
+            </div>
 
             <!-- ユーザー一覧 -->
             <div class="bg-white rounded-lg shadow-md p-6">
@@ -3327,6 +3365,57 @@ app.get('/admin', (c) => {
             } catch (error) {
                 alert('エラー: ' + (error.response?.data?.error || 'ユーザー追加に失敗しました'));
             }
+        });
+        
+        // 一括ユーザー登録
+        document.getElementById('bulkAddUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const bulkData = document.getElementById('bulkUserData').value;
+            const lines = bulkData.trim().split('\\n');
+            
+            let successCount = 0;
+            let errorCount = 0;
+            const errors = [];
+            
+            document.getElementById('bulkAddResult').classList.add('hidden');
+            
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                
+                // タブまたはスペースで分割
+                const parts = line.trim().split(/[\\t\\s]+/);
+                if (parts.length < 1) continue;
+                
+                const password = parts[0];
+                const username = parts.slice(1).join(' ') || '';
+                
+                try {
+                    await axios.post('/api/admin/users', { password, username });
+                    successCount++;
+                } catch (error) {
+                    errorCount++;
+                    errors.push(\`\${password}: \${error.response?.data?.error || 'エラー'}\`);
+                }
+                
+                // 少し待機（サーバー負荷軽減）
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // 結果表示
+            const resultDiv = document.getElementById('bulkAddResult');
+            const messageDiv = document.getElementById('bulkAddMessage');
+            resultDiv.classList.remove('hidden');
+            
+            if (errorCount === 0) {
+                resultDiv.querySelector('div').className = 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded';
+                messageDiv.textContent = \`成功: \${successCount}件のユーザーを登録しました\`;
+            } else {
+                resultDiv.querySelector('div').className = 'bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded';
+                messageDiv.innerHTML = \`成功: \${successCount}件 | 失敗: \${errorCount}件<br><br>エラー詳細:<br>\${errors.join('<br>')}\`;
+            }
+            
+            document.getElementById('bulkAddUserForm').reset();
+            await loadUsers();
         });
 
         document.getElementById('addVideoForm').addEventListener('submit', async (e) => {
