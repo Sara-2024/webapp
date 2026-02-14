@@ -1358,6 +1358,23 @@ app.get('/trade', (c) => {
                 </div>
             </div>
             
+            <!-- 次回サイン予定時刻表示 -->
+            <div class="bg-gradient-to-br from-blue-100 to-blue-50 rounded-lg shadow-md p-3 sm:p-4 mb-2 sm:mb-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-clock text-blue-600 text-2xl mr-3"></i>
+                        <div>
+                            <div class="text-xs sm:text-sm text-gray-600">次回サイン予定</div>
+                            <div id="nextSignalTime" class="text-lg sm:text-xl font-bold text-blue-700">計算中...</div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs sm:text-sm text-gray-600">残り時間</div>
+                        <div id="timeUntilSignal" class="text-lg sm:text-xl font-bold text-orange-600">--</div>
+                    </div>
+                </div>
+            </div>
+            
             <!-- ローソク足チャート -->
             <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4 flex-1 flex flex-col min-h-0">
                 <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
@@ -1692,6 +1709,95 @@ app.get('/trade', (c) => {
             }
         }
 
+        // サインアラート用の変数
+        let lastSignalTimestamp = 0;
+        let lastSignalCount = 0;
+        
+        // サインアラートを表示
+        function showSignalAlert(signal) {
+            const notification = document.getElementById('notification');
+            const icon = document.getElementById('notificationIcon');
+            const titleEl = document.getElementById('notificationTitle');
+            const messageEl = document.getElementById('notificationMessage');
+            const container = notification.querySelector('div');
+
+            // サインタイプに応じてスタイル変更
+            if (signal.type === 'BUY') {
+                container.className = 'bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4 border-green-500';
+                icon.className = 'fas fa-arrow-up text-5xl mr-4 text-green-500';
+                titleEl.textContent = '🔔 買いサイン点灯！';
+                messageEl.textContent = '$' + signal.price.toFixed(2) + ' で買いサインが出ました';
+            } else {
+                container.className = 'bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4 border-red-500';
+                icon.className = 'fas fa-arrow-down text-5xl mr-4 text-red-500';
+                titleEl.textContent = '🔔 売りサイン点灯！';
+                messageEl.textContent = '$' + signal.price.toFixed(2) + ' で売りサインが出ました';
+            }
+
+            notification.classList.remove('hidden');
+            notification.classList.add('notification-enter');
+
+            // 音を鳴らす（オプション）
+            try {
+                const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuHzPLaizsIHGm98OScTgwOUKnh77RgGgU7k9r0yXksBSOAyfLajTkIHWq87+SbTQwOUKrg77RhGwc9lNz0yHcqBSJ+yPLakTUIHW296eSYTQwMUKvm8LVjHAY7k9r0yXksAyJ+yPLajjkIHW+98OScTQwMU');
+                audio.volume = 0.3;
+                audio.play().catch(() => {});
+            } catch (e) {
+                // 音再生エラーは無視
+            }
+
+            setTimeout(() => {
+                notification.classList.remove('notification-enter');
+                notification.classList.add('notification-exit');
+                setTimeout(() => {
+                    notification.classList.add('hidden');
+                    notification.classList.remove('notification-exit');
+                }, 300);
+            }, 5000); // 5秒間表示
+        }
+        
+        // 次回サイン予定時刻を計算・表示
+        async function updateNextSignalTime() {
+            try {
+                const response = await axios.get('/api/gold10/signals?hours=12');
+                const signals = response.data;
+                
+                if (signals.length === 0) {
+                    document.getElementById('nextSignalTime').textContent = '不明';
+                    document.getElementById('timeUntilSignal').textContent = '--';
+                    return;
+                }
+                
+                // 最新のサインのタイムスタンプ
+                const latestSignal = signals[signals.length - 1];
+                const latestTime = latestSignal.timestamp * 1000; // ミリ秒に変換
+                
+                // 次回サイン予定時刻（25-35分後の中央値=30分後）
+                const nextSignalTime = latestTime + (30 * 60 * 1000);
+                const nextDate = new Date(nextSignalTime);
+                
+                // UTC時刻で表示
+                const hours = String(nextDate.getUTCHours()).padStart(2, '0');
+                const minutes = String(nextDate.getUTCMinutes()).padStart(2, '0');
+                document.getElementById('nextSignalTime').textContent = hours + ':' + minutes + ' UTC';
+                
+                // 残り時間を計算
+                const now = Date.now();
+                const timeLeft = nextSignalTime - now;
+                
+                if (timeLeft < 0) {
+                    document.getElementById('timeUntilSignal').textContent = 'まもなく';
+                } else {
+                    const minutesLeft = Math.floor(timeLeft / (60 * 1000));
+                    const secondsLeft = Math.floor((timeLeft % (60 * 1000)) / 1000);
+                    document.getElementById('timeUntilSignal').textContent = 
+                        minutesLeft + '分' + secondsLeft + '秒';
+                }
+            } catch (error) {
+                console.error('次回サイン時刻計算エラー:', error);
+            }
+        }
+
         // チャートをリアルタイム更新
         async function updateGold10Chart() {
             try {
@@ -1736,7 +1842,7 @@ app.get('/trade', (c) => {
                     currentPrice = candle.close;
                 }
 
-                // 新しいサインがあればマーカーを追加
+                // 新しいサインがあればマーカーを追加＆アラート表示
                 if (signals && signals.length > 0) {
                     // 既存のマーカーと新しいマーカーをマージ（重複を避ける）
                     const existingTimestamps = new Set(signalMarkers.map(m => m.time));
@@ -1749,12 +1855,22 @@ app.get('/trade', (c) => {
                             text: signal.type === 'BUY' ? '買サイン' : '売サイン',
                         }));
                     
-                    // 新しいマーカーがあれば追加
+                    // 新しいマーカーがあれば追加＆アラート表示
                     if (newMarkers.length > 0) {
                         signalMarkers = [...signalMarkers, ...newMarkers];
                         // タイムスタンプ順にソート
                         signalMarkers.sort((a, b) => a.time - b.time);
                         candlestickSeries.setMarkers(signalMarkers);
+                        
+                        // 最新のサインでアラート表示（初回ロード時は表示しない）
+                        if (lastSignalCount > 0) {
+                            const latestSignal = signals[signals.length - 1];
+                            showSignalAlert(latestSignal);
+                        }
+                        lastSignalCount = signals.length;
+                        
+                        // 次回サイン予定時刻を更新
+                        updateNextSignalTime();
                     }
                 }
 
@@ -2086,6 +2202,9 @@ app.get('/trade', (c) => {
                         chartArea.scrollTop = chartArea.scrollHeight;
                     }, 500); // チャート描画完了を待つ
                 }
+                
+                // 初回サイン時刻を読み込み
+                await updateNextSignalTime();
             }
         })();
         
@@ -2107,6 +2226,9 @@ app.get('/trade', (c) => {
             
             // チャートも更新（ローソク足の途中経過を反映）
             await updateGold10Chart();
+            
+            // 次回サイン予定時刻を更新
+            await updateNextSignalTime();
             
             // 15分経過ポジションの自動決済チェック
             try {
