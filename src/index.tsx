@@ -1540,17 +1540,17 @@ app.get('/trade', (c) => {
         #chartContainer {
             position: relative;
             width: 100%;
-            height: 300px;
+            height: 200px;  /* スマホ版: 300px → 200pxに縮小 */
             touch-action: pan-y pinch-zoom;
         }
         @media (min-width: 640px) {
             #chartContainer {
-                height: 400px;
+                height: 350px;  /* タブレット版: 400px → 350px */
             }
         }
         @media (min-width: 1024px) {
             #chartContainer {
-                height: 600px;
+                height: 600px;  /* PC版は変更なし */
             }
         }
         #rsiContainer {
@@ -1644,15 +1644,15 @@ app.get('/trade', (c) => {
             </div>
             
             <!-- ローソク足チャート -->
-            <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4 flex-1 flex flex-col min-h-0">
+            <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4 flex-1 flex flex-col min-h-0 max-h-[350px] lg:max-h-none">
                 <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
                     <i class="fas fa-chart-line mr-1 sm:mr-2"></i>価格チャート
                 </h3>
                 <div style="position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;">
                     <!-- ローソク足チャート（70%） -->
-                    <div id="chartContainer" style="height: 70%; min-height: 300px;"></div>
+                    <div id="chartContainer" style="height: 70%; min-height: 200px;"></div>
                     <!-- MACDチャート（30%） -->
-                    <div id="macdContainer" style="height: 30%; min-height: 150px; margin-top: 4px;"></div>
+                    <div id="macdContainer" style="height: 30%; min-height: 100px; margin-top: 4px;"></div>
                     <!-- カスタムツールチップ -->
                     <div id="tooltip" style="
                         position: absolute;
