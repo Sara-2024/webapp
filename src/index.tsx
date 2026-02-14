@@ -1396,8 +1396,11 @@ app.get('/trade', (c) => {
                 <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
                     <i class="fas fa-chart-line mr-1 sm:mr-2"></i>価格チャート
                 </h3>
-                <div style="position: relative; flex: 1; min-height: 0;">
-                    <div id="chartContainer" style="height: 100%;"></div>
+                <div style="position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;">
+                    <!-- ローソク足チャート（70%） -->
+                    <div id="chartContainer" style="height: 70%; min-height: 300px;"></div>
+                    <!-- MACDチャート（30%） -->
+                    <div id="macdContainer" style="height: 30%; min-height: 150px; margin-top: 4px;"></div>
                     <!-- カスタムツールチップ -->
                     <div id="tooltip" style="
                         position: absolute;
@@ -1529,20 +1532,61 @@ app.get('/trade', (c) => {
     <script>
         // ========== GOLD10チャート関連 ==========
         let chart = null;
+        let macdChart = null;
         let candlestickSeries = null;
+        let macdLineSeries = null;
+        let macdSignalSeries = null;
+        let macdHistogramSeries = null;
         let signalMarkers = [];
         let candlesDataWithRSI = [];  // RSIデータを含むローソク足データを保持
+        
+        // MACD計算関数
+        function calculateMACD(candles, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+            const closes = candles.map(c => c.close);
+            
+            // EMA計算
+            function calculateEMA(data, period) {
+                const k = 2 / (period + 1);
+                const emaArray = [data[0]];
+                
+                for (let i = 1; i < data.length; i++) {
+                    const ema = (data[i] * k) + (emaArray[i - 1] * (1 - k));
+                    emaArray.push(ema);
+                }
+                
+                return emaArray;
+            }
+            
+            // Fast EMA (12) と Slow EMA (26)
+            const fastEMA = calculateEMA(closes, fastPeriod);
+            const slowEMA = calculateEMA(closes, slowPeriod);
+            
+            // MACD Line = Fast EMA - Slow EMA
+            const macdLine = fastEMA.map((fast, i) => fast - slowEMA[i]);
+            
+            // Signal Line = MACD LineのEMA(9)
+            const signalLine = calculateEMA(macdLine, signalPeriod);
+            
+            // Histogram = MACD Line - Signal Line
+            const histogram = macdLine.map((macd, i) => macd - signalLine[i]);
+            
+            return candles.map((candle, i) => ({
+                time: candle.timestamp,
+                macd: macdLine[i],
+                signal: signalLine[i],
+                histogram: histogram[i]
+            }));
+        }
         
         // Lightweight Chartsの初期化
         function initializeCharts() {
             // メインチャート（ローソク足）
             const chartContainer = document.getElementById('chartContainer');
+            const macdContainer = document.getElementById('macdContainer');
             const isMobile = window.innerWidth < 1024;
-            const chartHeight = isMobile ? chartContainer.clientHeight : 600;
             
-            chart = LightweightCharts.createChart(chartContainer, {
+            const chartOptions = {
                 width: chartContainer.clientWidth,
-                height: chartHeight,
                 layout: {
                     background: { color: '#ffffff' },
                     textColor: '#333',
@@ -1567,9 +1611,7 @@ app.get('/trade', (c) => {
                 },
                 localization: {
                     timeFormatter: (timestamp) => {
-                        // タイムスタンプはUTC、JST（UTC+9）に変換して表示
                         const date = new Date(timestamp * 1000);
-                        const year = date.getUTCFullYear();
                         const month = String(date.getUTCMonth() + 1).padStart(2, '0');
                         const day = String(date.getUTCDate()).padStart(2, '0');
                         const hours = String(date.getUTCHours()).padStart(2, '0');
@@ -1577,6 +1619,12 @@ app.get('/trade', (c) => {
                         return month + '/' + day + ' ' + hours + ':' + minutes;
                     },
                 },
+            };
+            
+            // ローソク足チャート
+            chart = LightweightCharts.createChart(chartContainer, {
+                ...chartOptions,
+                height: chartContainer.clientHeight,
             });
 
             candlestickSeries = chart.addCandlestickSeries({
@@ -1586,16 +1634,71 @@ app.get('/trade', (c) => {
                 wickUpColor: '#26a69a',
                 wickDownColor: '#ef5350',
             });
+            
+            // MACDチャート
+            macdChart = LightweightCharts.createChart(macdContainer, {
+                ...chartOptions,
+                height: macdContainer.clientHeight,
+            });
+            
+            // MACD Line (青)
+            macdLineSeries = macdChart.addLineSeries({
+                color: '#2196F3',
+                lineWidth: 2,
+                title: 'MACD',
+            });
+            
+            // Signal Line (赤)
+            macdSignalSeries = macdChart.addLineSeries({
+                color: '#FF5252',
+                lineWidth: 2,
+                title: 'Signal',
+            });
+            
+            // Histogram (ヒストグラム)
+            macdHistogramSeries = macdChart.addHistogramSeries({
+                color: '#26a69a',
+                priceFormat: {
+                    type: 'volume',
+                },
+                priceScaleId: '',
+            });
+
+            // 両チャートのクロスヘアを同期
+            chart.subscribeCrosshairMove((param) => {
+                if (param.time) {
+                    macdChart.timeScale().scrollToPosition(0, false);
+                }
+            });
+            
+            macdChart.subscribeCrosshairMove((param) => {
+                if (param.time) {
+                    chart.timeScale().scrollToPosition(0, false);
+                }
+            });
+            
+            // タイムスケールの同期
+            chart.timeScale().subscribeVisibleLogicalRangeChange((timeRange) => {
+                macdChart.timeScale().setVisibleLogicalRange(timeRange);
+            });
+            
+            macdChart.timeScale().subscribeVisibleLogicalRangeChange((timeRange) => {
+                chart.timeScale().setVisibleLogicalRange(timeRange);
+            });
 
             // ウィンドウリサイズ対応
             window.addEventListener('resize', () => {
                 const chartContainer = document.getElementById('chartContainer');
-                const isMobile = window.innerWidth < 1024;
-                const chartHeight = isMobile ? chartContainer.clientHeight : 600;
+                const macdContainer = document.getElementById('macdContainer');
                 
                 chart.applyOptions({ 
                     width: chartContainer.clientWidth,
-                    height: chartHeight
+                    height: chartContainer.clientHeight
+                });
+                
+                macdChart.applyOptions({ 
+                    width: macdContainer.clientWidth,
+                    height: macdContainer.clientHeight
                 });
             });
 
@@ -1669,10 +1772,31 @@ app.get('/trade', (c) => {
                 if (candleData.length > 0) {
                     candlestickSeries.setData(candleData);
                     
+                    // MACDデータを計算して表示
+                    const macdData = calculateMACD(candles);
+                    
+                    const macdLineData = macdData.map(d => ({ time: d.time, value: d.macd }));
+                    const signalLineData = macdData.map(d => ({ time: d.time, value: d.signal }));
+                    const histogramData = macdData.map(d => ({ 
+                        time: d.time, 
+                        value: d.histogram,
+                        color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
+                    }));
+                    
+                    macdLineSeries.setData(macdLineData);
+                    macdSignalSeries.setData(signalLineData);
+                    macdHistogramSeries.setData(histogramData);
+                    
                     // チャートの表示範囲を最新データに合わせる
                     const latestTime = candleData[candleData.length - 1].time;
                     const earliestTime = candleData[Math.max(0, candleData.length - 120)].time; // 最新120本（2時間分）を表示
                     chart.timeScale().setVisibleRange({
+                        from: earliestTime,
+                        to: latestTime
+                    });
+                    
+                    // MACDチャートも同じ範囲に
+                    macdChart.timeScale().setVisibleRange({
                         from: earliestTime,
                         to: latestTime
                     });
@@ -1827,6 +1951,20 @@ app.get('/trade', (c) => {
                         candlesDataWithRSI[existingIndex] = candle;
                     } else {
                         candlesDataWithRSI.push(candle);
+                    }
+                    
+                    // MACDデータを再計算して更新
+                    const macdData = calculateMACD(candlesDataWithRSI);
+                    const latestMACD = macdData[macdData.length - 1];
+                    
+                    if (latestMACD) {
+                        macdLineSeries.update({ time: latestMACD.time, value: latestMACD.macd });
+                        macdSignalSeries.update({ time: latestMACD.time, value: latestMACD.signal });
+                        macdHistogramSeries.update({ 
+                            time: latestMACD.time, 
+                            value: latestMACD.histogram,
+                            color: latestMACD.histogram >= 0 ? '#26a69a' : '#ef5350'
+                        });
                     }
 
                     // 現在価格とRSI表示を更新
