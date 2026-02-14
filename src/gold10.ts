@@ -76,12 +76,12 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
   let timestamp: number
   
   if (previousCandle) {
-    // 前のローソク足のタイムスタンプ + 60秒
-    timestamp = previousCandle.timestamp + 60
+    // 前のローソク足のタイムスタンプ + 30秒（30秒足）
+    timestamp = previousCandle.timestamp + 30
   } else {
-    // 初回生成時は現在時刻を60秒単位に丸める
+    // 初回生成時は現在時刻を30秒単位に丸める
     const now = Math.floor(Date.now() / 1000)
-    timestamp = Math.floor(now / 60) * 60
+    timestamp = Math.floor(now / 30) * 30
   }
 
   let open: number

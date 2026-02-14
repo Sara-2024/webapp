@@ -1589,7 +1589,8 @@ app.get('/trade', (c) => {
                 const day = String(date.getUTCDate()).padStart(2, '0');
                 const hours = String(date.getUTCHours()).padStart(2, '0');
                 const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-                const dateStr = month + '/' + day + ' ' + hours + ':' + minutes;
+                const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+                const dateStr = month + '/' + day + ' ' + hours + ':' + minutes + ':' + seconds;
 
                 // RSI値を取得
                 const rsi = candleData.rsi ? candleData.rsi.toFixed(1) : '--';
