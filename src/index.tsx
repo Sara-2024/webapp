@@ -780,6 +780,21 @@ const generateCandleHandler = async (c: any) => {
   // 新しいローソク足を生成
   const newCandle = generateCandle(candleToUse, 4950)
 
+  // 🔒 重要: 同じタイムスタンプのローソク足が既に存在するかチェック
+  const existingCandle = await c.env.DB.prepare(`
+    SELECT id FROM gold10_candles WHERE timestamp = ?
+  `).bind(newCandle.timestamp).first()
+
+  // 既に存在する場合はスキップ（複数ユーザーの同時アクセス対策）
+  if (existingCandle) {
+    return c.json({ 
+      message: 'このタイムスタンプのローソク足は既に存在します', 
+      skip: true,
+      timestamp: newCandle.timestamp,
+      existingId: existingCandle.id
+    })
+  }
+
   // ローソク足をDBに保存
   const insertResult = await c.env.DB.prepare(`
     INSERT INTO gold10_candles (timestamp, open, high, low, close)
@@ -2508,10 +2523,11 @@ app.get('/trade', (c) => {
                 return null;
             });
             
-            // スキップされた場合はログのみ出力（チャート更新は行わない）
+            // スキップされた場合はチャートだけ更新（ローソク足は生成しない）
             if (response?.data?.skip) {
-                console.log('ローソク足生成スキップ:', response.data.message, 
-                    '残り' + response.data.remainingSeconds + '秒');
+                console.log('ローソク足生成スキップ:', response.data.message);
+                // チャートのみ更新（既存データの表示）
+                await updateGold10Chart();
                 return;
             }
             
