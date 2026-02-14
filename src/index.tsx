@@ -3270,35 +3270,8 @@ app.get('/admin', (c) => {
 
         <!-- システム情報 -->
         <div id="systemPanel" class="space-y-4">
-            <!-- 次回サイン予定 -->
+            <!-- サイン生成コントロール -->
             <div class="bg-white rounded-lg shadow-md p-6">
-                <h2 class="text-2xl font-bold mb-4">
-                    <i class="fas fa-clock mr-2 text-blue-500"></i>次回サイン予定
-                </h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-blue-50 rounded-lg p-4">
-                        <div class="text-sm text-gray-600 mb-1">最新サイン時刻</div>
-                        <div id="lastSignalTime" class="text-xl font-bold text-blue-700">--</div>
-                    </div>
-                    <div class="bg-green-50 rounded-lg p-4">
-                        <div class="text-sm text-gray-600 mb-1">次回サイン予定</div>
-                        <div id="nextSignalTime" class="text-xl font-bold text-green-700">--</div>
-                    </div>
-                    <div class="bg-orange-50 rounded-lg p-4">
-                        <div class="text-sm text-gray-600 mb-1">残り時間</div>
-                        <div id="timeUntilSignal" class="text-xl font-bold text-orange-700">--</div>
-                    </div>
-                </div>
-                <div class="mt-4 text-sm text-gray-600">
-                    <p><i class="fas fa-info-circle mr-2"></i>サインは25-35分間隔で自動生成されます（平均30分）</p>
-                </div>
-            </div>
-            
-            <!-- GOLD10統計情報 -->
-            <div class="bg-white rounded-lg shadow-md p-6">
-                <h2 class="text-2xl font-bold mb-4">
-                    <i class="fas fa-chart-bar mr-2 text-yellow-500"></i>GOLD10統計
-                </h2>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div class="bg-yellow-50 rounded-lg p-4">
                         <div class="text-sm text-gray-600 mb-1">総ローソク足数</div>
@@ -3314,7 +3287,7 @@ app.get('/admin', (c) => {
                     </div>
                 </div>
                 
-                <!-- サイン生成コントロール -->
+                <!-- サイン生成 -->
                 <div class="border-t pt-6">
                     <h3 class="text-lg font-bold mb-4 text-gray-800">
                         <i class="fas fa-bell mr-2 text-green-500"></i>サイン生成
@@ -3579,36 +3552,6 @@ app.get('/admin', (c) => {
                 // サイン情報を取得
                 const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
                 const signals = signalsResponse.data;
-                
-                // 最新サイン
-                if (signals.length > 0) {
-                    const latestSignal = signals[signals.length - 1];
-                    const latestTime = new Date(latestSignal.timestamp * 1000);
-                    const hours = String(latestTime.getUTCHours()).padStart(2, '0');
-                    const minutes = String(latestTime.getUTCMinutes()).padStart(2, '0');
-                    document.getElementById('lastSignalTime').textContent = hours + ':' + minutes + ' UTC';
-                    
-                    // 次回サイン予定（30分後）
-                    const nextTime = new Date(latestSignal.timestamp * 1000 + 30 * 60 * 1000);
-                    const nextHours = String(nextTime.getUTCHours()).padStart(2, '0');
-                    const nextMinutes = String(nextTime.getUTCMinutes()).padStart(2, '0');
-                    document.getElementById('nextSignalTime').textContent = nextHours + ':' + nextMinutes + ' UTC';
-                    
-                    // 残り時間
-                    const now = Date.now();
-                    const timeLeft = nextTime.getTime() - now;
-                    if (timeLeft < 0) {
-                        document.getElementById('timeUntilSignal').textContent = 'まもなく';
-                    } else {
-                        const minutesLeft = Math.floor(timeLeft / (60 * 1000));
-                        const secondsLeft = Math.floor((timeLeft % (60 * 1000)) / 1000);
-                        document.getElementById('timeUntilSignal').textContent = minutesLeft + '分' + secondsLeft + '秒';
-                    }
-                } else {
-                    document.getElementById('lastSignalTime').textContent = 'サインなし';
-                    document.getElementById('nextSignalTime').textContent = '不明';
-                    document.getElementById('timeUntilSignal').textContent = '--';
-                }
                 
                 // ローソク足情報を取得
                 const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
