@@ -1822,9 +1822,15 @@ app.get('/trade', (c) => {
                     }
                 }
 
-                // サインをマーカーとして表示
-                if (signals.length > 0) {
-                    const markers = signals.map(signal => ({
+                // サインをマーカーとして表示（表示範囲内のみ）
+                if (signals.length > 0 && candleData.length > 0) {
+                    // 表示範囲の開始時刻を取得（最新120本分）
+                    const displayStartTime = candleData[Math.max(0, candleData.length - 120)].time;
+                    
+                    // 表示範囲内のサインだけをフィルタリング
+                    const visibleSignals = signals.filter(signal => signal.timestamp >= displayStartTime);
+                    
+                    const markers = visibleSignals.map(signal => ({
                         time: signal.timestamp,
                         position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
                         color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
@@ -1989,9 +1995,18 @@ app.get('/trade', (c) => {
 
                 // 新しいサインがあればマーカーを追加＆アラート表示
                 if (signals && signals.length > 0) {
+                    // 表示範囲の開始時刻を計算（現在から2時間前）
+                    const currentTime = candle ? candle.timestamp : Date.now() / 1000;
+                    const displayStartTime = currentTime - (120 * 30); // 120本 × 30秒
+                    
+                    // 既存のマーカーから古いものを削除（表示範囲外）
+                    signalMarkers = signalMarkers.filter(m => m.time >= displayStartTime);
+                    
                     // 既存のマーカーと新しいマーカーをマージ（重複を避ける）
                     const existingTimestamps = new Set(signalMarkers.map(m => m.time));
-                    const newMarkers = signals.filter(signal => !existingTimestamps.has(signal.timestamp))
+                    const newMarkers = signals
+                        .filter(signal => signal.timestamp >= displayStartTime) // 表示範囲内のみ
+                        .filter(signal => !existingTimestamps.has(signal.timestamp))
                         .map(signal => ({
                             time: signal.timestamp,
                             position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
@@ -2016,6 +2031,9 @@ app.get('/trade', (c) => {
                         
                         // 次回サイン予定時刻を更新
                         updateNextSignalTime();
+                    } else {
+                        // 新しいサインはないが、古いサインを削除した場合はマーカーを更新
+                        candlestickSeries.setMarkers(signalMarkers);
                     }
                 }
 
