@@ -756,6 +756,20 @@ const generateCandleHandler = async (c: any) => {
   let candleToUse = latestCandle
   
   if (latestCandle) {
+    // 次のローソク足の時刻（30秒後）
+    const nextCandleTime = latestCandle.timestamp + 30
+    
+    // まだ次のローソク足の時刻に達していない場合はスキップ
+    if (now < nextCandleTime) {
+      return c.json({ 
+        message: '次のローソク足の時刻まで待機中', 
+        skip: true,
+        nextCandleTime,
+        currentTime: now,
+        remainingSeconds: nextCandleTime - now
+      })
+    }
+    
     const timeDiff = Math.abs(now - latestCandle.timestamp)
     // 1分以上離れている場合は、新規生成として扱う（UTC統一を徹底）
     if (timeDiff > 60) {
@@ -2489,9 +2503,17 @@ app.get('/trade', (c) => {
         // GOLD10チャートを30秒ごとに更新（新しいローソク足とサイン生成）
         setInterval(async () => {
             // サーバー側で新しいローソク足を生成
-            await axios.post('/api/gold10/generate').catch(err => {
+            const response = await axios.post('/api/gold10/generate').catch(err => {
                 console.log('ローソク足生成:', err.response?.status === 500 ? 'スキップ' : err.message);
+                return null;
             });
+            
+            // スキップされた場合はログのみ出力（チャート更新は行わない）
+            if (response?.data?.skip) {
+                console.log('ローソク足生成スキップ:', response.data.message, 
+                    '残り' + response.data.remainingSeconds + '秒');
+                return;
+            }
             
             // チャートを更新
             await updateGold10Chart();
