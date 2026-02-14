@@ -718,8 +718,20 @@ const generateCandleHandler = async (c: any) => {
     LIMIT 1
   `).first() as Signal | null
 
+  // タイムスタンプの検証: 最新ローソク足が現在時刻から大きく離れている場合はリセット
+  const now = Math.floor(Date.now() / 1000)
+  let candleToUse = latestCandle
+  
+  if (latestCandle) {
+    const timeDiff = Math.abs(now - latestCandle.timestamp)
+    // 10分以上離れている場合は、新規生成として扱う
+    if (timeDiff > 600) {
+      candleToUse = null
+    }
+  }
+
   // 新しいローソク足を生成
-  const newCandle = generateCandle(latestCandle, 4950)
+  const newCandle = generateCandle(candleToUse, 4950)
 
   // ローソク足をDBに保存
   const insertResult = await c.env.DB.prepare(`
