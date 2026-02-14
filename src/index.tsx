@@ -1566,9 +1566,47 @@ app.get('/trade', (c) => {
                 });
             });
 
-            // カスタムツールチップ（無効化：ユーザー要望により非表示）
-            // const tooltip = document.getElementById('tooltip');
-            // const tooltipContent = document.getElementById('tooltipContent');
+            // カスタムツールチップ（RSIのみ表示）
+            const tooltip = document.getElementById('tooltip');
+            const tooltipContent = document.getElementById('tooltipContent');
+
+            chart.subscribeCrosshairMove((param) => {
+                if (!param.time || !param.point) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+
+                // 該当時刻のローソク足データを探す
+                const candleData = candlesDataWithRSI.find(c => c.timestamp === param.time);
+                if (!candleData) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+
+                // RSI値を取得
+                const rsi = candleData.rsi ? candleData.rsi.toFixed(1) : '--';
+                
+                // RSI色分け
+                let rsiColor = '#3b82f6';  // blue
+                if (candleData.rsi >= 70) {
+                    rsiColor = '#ef4444';  // red
+                } else if (candleData.rsi <= 30) {
+                    rsiColor = '#22c55e';  // green
+                }
+
+                // ツールチップの内容を設定（RSIのみ表示）
+                tooltipContent.innerHTML = \`
+                    <div style="color: \${rsiColor}; font-weight: bold;">RSI: \${rsi}</div>
+                \`;
+
+                // ツールチップの位置を設定
+                const chartContainer = document.getElementById('chartContainer');
+                const chartRect = chartContainer.getBoundingClientRect();
+                
+                tooltip.style.display = 'block';
+                tooltip.style.left = param.point.x + 'px';
+                tooltip.style.top = (param.point.y - 40) + 'px';  // 少し上に表示
+            });
         }
 
         // GOLD10データを読み込んでチャートに表示
