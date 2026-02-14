@@ -231,7 +231,7 @@ export function generateInitialCandles(count: number = 720): Candle[] {
   let previousCandle: Candle | null = null
 
   for (let i = 0; i < count; i++) {
-    const timestamp = startTime + (i * 60)
+    const timestamp = startTime + (i * 30)  // 30秒間隔（30秒足）
     const candle = generateCandle(previousCandle, basePrice)
     candle.timestamp = timestamp
 

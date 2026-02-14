@@ -2486,7 +2486,7 @@ app.get('/trade', (c) => {
             }
         })();
         
-        // GOLD10チャートを60秒ごとに更新（新しいローソク足とサイン生成）
+        // GOLD10チャートを30秒ごとに更新（新しいローソク足とサイン生成）
         setInterval(async () => {
             // サーバー側で新しいローソク足を生成
             await axios.post('/api/gold10/generate').catch(err => {
@@ -2495,7 +2495,7 @@ app.get('/trade', (c) => {
             
             // チャートを更新
             await updateGold10Chart();
-        }, 60000);  // 60秒ごと（1分足）
+        }, 30000);  // 30秒ごと（30秒足）
 
         // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
         setInterval(async () => {
