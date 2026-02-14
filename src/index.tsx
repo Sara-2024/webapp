@@ -756,6 +756,17 @@ const generateCandleHandler = async (c: any) => {
   let candleToUse = latestCandle
   
   if (latestCandle) {
+    // 🔒 最新ローソク足が未来の場合は異常なので拒否
+    if (latestCandle.timestamp > now + 60) {
+      return c.json({ 
+        error: '最新ローソク足が未来の時刻です。外部Cronのクロックを確認してください。',
+        skip: true,
+        latestCandleTime: latestCandle.timestamp,
+        currentTime: now,
+        timeDiff: latestCandle.timestamp - now
+      }, 400)
+    }
+    
     // 次のローソク足の時刻（30秒後）
     const nextCandleTime = latestCandle.timestamp + 30
     
@@ -771,14 +782,14 @@ const generateCandleHandler = async (c: any) => {
     }
     
     const timeDiff = Math.abs(now - latestCandle.timestamp)
-    // 1分以上離れている場合は、新規生成として扱う（UTC統一を徹底）
-    if (timeDiff > 60) {
+    // 5分以上離れている場合のみ、新規生成として扱う
+    if (timeDiff > 300) {
       candleToUse = null
     }
   }
 
-  // 新しいローソク足を生成
-  const newCandle = generateCandle(candleToUse, 4950)
+  // 新しいローソク足を生成（現在時刻を渡す）
+  const newCandle = generateCandle(candleToUse, 4950, now)
 
   // 🔒 重要: 同じタイムスタンプのローソク足が既に存在するかチェック
   const existingCandle = await c.env.DB.prepare(`

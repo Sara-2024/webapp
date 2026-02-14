@@ -71,16 +71,27 @@ export function calculateRSI(candles: Candle[], period: number = 14): number {
  * 新しいローソク足を生成
  * - GOLD価格帯: $4,900-$5,100
  * - リアルなローソク足パターンを生成
+ * - currentTime: 現在のUNIXタイムスタンプ（秒）。指定しない場合はDate.now()を使用
  */
-export function generateCandle(previousCandle: Candle | null, basePrice: number = 4950): Candle {
+export function generateCandle(previousCandle: Candle | null, basePrice: number = 4950, currentTime?: number): Candle {
   let timestamp: number
+  
+  // 現在時刻（引数で渡されない場合はDate.now()を使用）
+  const now = currentTime !== undefined ? currentTime : Math.floor(Date.now() / 1000)
   
   if (previousCandle) {
     // 前のローソク足のタイムスタンプ + 30秒（30秒足）
-    timestamp = previousCandle.timestamp + 30
+    const nextTimestamp = previousCandle.timestamp + 30
+    
+    // 🔒 次のタイムスタンプが現在時刻を大きく超えている場合は現在時刻を使用
+    if (nextTimestamp > now + 60) {
+      // 異常な未来の時刻になる場合は、現在時刻を30秒単位に丸めて使用
+      timestamp = Math.floor(now / 30) * 30
+    } else {
+      timestamp = nextTimestamp
+    }
   } else {
     // 初回生成時は現在時刻を30秒単位に丸める
-    const now = Math.floor(Date.now() / 1000)
     timestamp = Math.floor(now / 30) * 30
   }
 
