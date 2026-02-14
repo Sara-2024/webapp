@@ -1566,57 +1566,9 @@ app.get('/trade', (c) => {
                 });
             });
 
-            // カスタムツールチップ
-            const tooltip = document.getElementById('tooltip');
-            const tooltipContent = document.getElementById('tooltipContent');
-
-            chart.subscribeCrosshairMove((param) => {
-                if (!param.time || !param.point) {
-                    tooltip.style.display = 'none';
-                    return;
-                }
-
-                // 該当時刻のローソク足データを探す
-                const candleData = candlesDataWithRSI.find(c => c.timestamp === param.time);
-                if (!candleData) {
-                    tooltip.style.display = 'none';
-                    return;
-                }
-
-                // 日時をフォーマット（タイムスタンプはUTC）
-                const date = new Date(param.time * 1000);
-                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-                const day = String(date.getUTCDate()).padStart(2, '0');
-                const hours = String(date.getUTCHours()).padStart(2, '0');
-                const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-                const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-                const dateStr = month + '/' + day + ' ' + hours + ':' + minutes + ':' + seconds;
-
-                // RSI値を取得
-                const rsi = candleData.rsi ? candleData.rsi.toFixed(1) : '--';
-                
-                // RSI色分け
-                let rsiColor = '#3b82f6';  // blue
-                if (candleData.rsi >= 70) {
-                    rsiColor = '#ef4444';  // red
-                } else if (candleData.rsi <= 30) {
-                    rsiColor = '#22c55e';  // green
-                }
-
-                // ツールチップの内容を設定（2行表示）
-                tooltipContent.innerHTML = \`
-                    <div style="color: #333; font-weight: bold;">\${dateStr}</div>
-                    <div style="color: \${rsiColor}; font-weight: bold; margin-top: 2px;">RSI: \${rsi}</div>
-                \`;
-
-                // ツールチップの位置を設定
-                const chartContainer = document.getElementById('chartContainer');
-                const chartRect = chartContainer.getBoundingClientRect();
-                
-                tooltip.style.display = 'block';
-                tooltip.style.left = param.point.x + 'px';
-                tooltip.style.top = (param.point.y - 60) + 'px';  // 少し上に表示
-            });
+            // カスタムツールチップ（無効化：ユーザー要望により非表示）
+            // const tooltip = document.getElementById('tooltip');
+            // const tooltipContent = document.getElementById('tooltipContent');
         }
 
         // GOLD10データを読み込んでチャートに表示
