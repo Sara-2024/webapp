@@ -1601,7 +1601,7 @@ app.get('/trade', (c) => {
                 timeScale: {
                     timeVisible: false,
                     secondsVisible: false,
-                    rightOffset: 12,
+                    rightOffset: 3,
                     barSpacing: 6,
                     fixLeftEdge: false,
                     fixRightEdge: false,
