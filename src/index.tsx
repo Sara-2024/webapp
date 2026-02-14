@@ -1587,12 +1587,11 @@ app.get('/trade', (c) => {
 
                 // 日時をフォーマット（タイムスタンプはUTC）
                 const date = new Date(param.time * 1000);
-                const year = date.getUTCFullYear();
                 const month = String(date.getUTCMonth() + 1).padStart(2, '0');
                 const day = String(date.getUTCDate()).padStart(2, '0');
                 const hours = String(date.getUTCHours()).padStart(2, '0');
                 const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-                const dateStr = year + '-' + month + '-' + day + ' ' + hours + ':' + minutes;
+                const dateStr = month + '/' + day + ' ' + hours + ':' + minutes;
 
                 // RSI値を取得
                 const rsi = candleData.rsi ? candleData.rsi.toFixed(1) : '--';
