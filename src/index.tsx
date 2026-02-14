@@ -1522,7 +1522,7 @@ app.get('/trade', (c) => {
                     mode: LightweightCharts.CrosshairMode.Normal,
                 },
                 timeScale: {
-                    timeVisible: true,
+                    timeVisible: false,
                     secondsVisible: false,
                     rightOffset: 12,
                     barSpacing: 6,
@@ -1530,9 +1530,7 @@ app.get('/trade', (c) => {
                     fixRightEdge: false,
                     lockVisibleTimeRangeOnResize: false,
                     rightBarStaysOnScroll: true,
-                    visible: true,
-                    timeVisible: true,
-                    secondsVisible: false,
+                    visible: false,
                 },
                 localization: {
                     timeFormatter: (timestamp) => {
