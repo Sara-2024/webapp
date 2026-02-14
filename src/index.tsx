@@ -1536,13 +1536,13 @@ app.get('/trade', (c) => {
                 },
                 localization: {
                     timeFormatter: (timestamp) => {
+                        // タイムスタンプはUTC、JST（UTC+9）に変換して表示
                         const date = new Date(timestamp * 1000);
-                        // 日本時間に変換（UTC+9）
-                        const jstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
-                        const hours = String(jstDate.getUTCHours()).padStart(2, '0');
-                        const minutes = String(jstDate.getUTCMinutes()).padStart(2, '0');
-                        const month = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
-                        const day = String(jstDate.getUTCDate()).padStart(2, '0');
+                        const year = date.getUTCFullYear();
+                        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                        const day = String(date.getUTCDate()).padStart(2, '0');
+                        const hours = String(date.getUTCHours()).padStart(2, '0');
+                        const minutes = String(date.getUTCMinutes()).padStart(2, '0');
                         return month + '/' + day + ' ' + hours + ':' + minutes;
                     },
                 },
@@ -1585,10 +1585,14 @@ app.get('/trade', (c) => {
                     return;
                 }
 
-                // 日時をフォーマット（日本時間 UTC+9）
+                // 日時をフォーマット（タイムスタンプはUTC）
                 const date = new Date(param.time * 1000);
-                const jstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
-                const dateStr = jstDate.toISOString().slice(0, 16).replace('T', ' ');
+                const year = date.getUTCFullYear();
+                const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(date.getUTCDate()).padStart(2, '0');
+                const hours = String(date.getUTCHours()).padStart(2, '0');
+                const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+                const dateStr = year + '-' + month + '-' + day + ' ' + hours + ':' + minutes;
 
                 // RSI値を取得
                 const rsi = candleData.rsi ? candleData.rsi.toFixed(1) : '--';
