@@ -545,10 +545,35 @@ app.get('/api/trade/ai-feedback', async (c) => {
 
     // 直近のサイン情報を取得
     const { results: recentSignals } = await c.env.DB.prepare(`
-      SELECT timestamp, type, price FROM gold10_signals
+      SELECT timestamp, type, price, rsi FROM gold10_signals
       ORDER BY timestamp DESC
       LIMIT 10
     `).all()
+
+    // 現在のGOLD10チャート状況を取得（最新20本のローソク足）
+    const { results: recentCandles } = await c.env.DB.prepare(`
+      SELECT timestamp, close, rsi FROM gold10_candles
+      ORDER BY timestamp DESC
+      LIMIT 20
+    `).all()
+
+    // 現在のRSI状態を分析
+    const currentRSI = recentCandles.length > 0 ? recentCandles[0].rsi : null
+    let rsiStatus = '中立'
+    if (currentRSI) {
+      if (currentRSI >= 70) rsiStatus = '買われすぎ（売りチャンス）'
+      else if (currentRSI <= 30) rsiStatus = '売られすぎ（買いチャンス）'
+      else if (currentRSI >= 36 && currentRSI <= 60) rsiStatus = '理想的な範囲'
+    }
+
+    // トレンド分析（最新20本の終値）
+    const prices = recentCandles.map((c: any) => c.close)
+    const avgPrice = prices.reduce((a: number, b: number) => a + b, 0) / prices.length
+    const latestPrice = prices[0]
+    const priceChange = ((latestPrice - avgPrice) / avgPrice * 100).toFixed(2)
+    let trendStatus = '横ばい'
+    if (parseFloat(priceChange) > 0.5) trendStatus = '上昇トレンド'
+    else if (parseFloat(priceChange) < -0.5) trendStatus = '下降トレンド'
 
     // ChatGPT APIを呼び出してフィードバックを生成
     const apiKey = c.env.OPENAI_API_KEY
@@ -558,7 +583,7 @@ app.get('/api/trade/ai-feedback', async (c) => {
       })
     }
 
-    const prompt = `あなたはプロのトレーディングコーチです。以下の取引データを分析して、具体的で実践的なフィードバックを3〜4つ提供してください。
+    const prompt = `あなたはプロのトレーディングコーチです。以下の取引データとリアルタイム市場情報を分析して、具体的で実践的なフィードバックを必ず3〜4行提供してください。
 
 【取引統計】
 - 総取引数: ${totalTrades}回
@@ -569,25 +594,30 @@ app.get('/api/trade/ai-feedback', async (c) => {
 - 買いの勝率: ${buyWinRate}% / 売りの勝率: ${sellWinRate}%
 - 1日あたりの取引数: ${tradesPerDay}回 (目標: 2回以上)
 
-【フィードバック要件】
-1. **RSI分析**: RSIを意識した取引ができているか？（RSI 36-60が理想的）
-2. **取引頻度**: 1日2回以上取引できているか？できていない場合は励ます
-3. **負けパターン分析**: 負けているトレードがトレンドの強い相場だったか分析
-4. **サイン活用**: GOLD10のサインを活用しているか？活用していない場合は少し厳しく指摘
-5. **勝率目標**: 60%の勝率を目指すための具体的なアドバイス
+【リアルタイム市場分析】
+- 現在のRSI: ${currentRSI ? currentRSI.toFixed(1) : '不明'} (${rsiStatus})
+- 現在の価格トレンド: ${trendStatus} (直近20本平均から${priceChange}%)
+- 最新のGOLD価格: $${latestPrice ? latestPrice.toFixed(2) : '不明'}
+- 直近のサイン数: ${recentSignals.length}件
 
-【出力形式】
-- 3〜4つの具体的なフィードバック
-- 各フィードバックは30〜50文字程度
-- 絵文字を適度に使用（各項目1つ程度）
-- ポジティブな励ましと改善点のバランスを取る
-- サインを使っていない場合は「⚠️」を使って少し厳しく指摘
+【フィードバック要件】（必ず3〜4行で出力）
+1. **現在のRSI状況**: 現在のRSI ${currentRSI ? currentRSI.toFixed(1) : '--'} から見たエントリータイミングの評価
+2. **トレンド分析**: 現在の${trendStatus}に対する推奨アクション（順張り/逆張り）
+3. **勝率とRSI活用**: ユーザーの勝率${winRate}%とRSI 36-60での取引意識の関連性
+4. **サイン活用度**: 直近のサイン${recentSignals.length}件に対する取引タイミングの評価
 
-例:
-📊 勝率${winRate}%は目標60%に${parseFloat(winRate) >= 60 ? '到達！' : 'もう少し！'}RSI 36-60での取引を意識しましょう
-${parseFloat(tradesPerDay) >= 2 ? '✨ 1日2回以上の取引ができています！' : '⏰ 1日2回以上の取引を目指しましょう'}
-📉 負けトレードの${Math.round(lossTrades * 0.6)}件はトレンドが強すぎた可能性あり
-⚠️ サインを活用した取引を心がけてください！精度が向上します`
+【必須出力形式】
+- 必ず3〜4行（改行区切り）
+- 各行は40〜60文字程度
+- 各行の先頭に絵文字を1つ付ける
+- インジケーター（RSI）、トレンド、サインのいずれかを必ず含める
+- 現在の市場状況を踏まえた具体的なアドバイス
+
+例（必ず3〜4行）:
+📊 現在RSI ${currentRSI ? currentRSI.toFixed(1) : '--'}（${rsiStatus}）｜勝率${winRate}%でRSI理想範囲での取引を意識すると60%到達可能
+📈 ${trendStatus}が継続中｜順張りエントリーを狙い、RSI 36-60で仕掛けると成功率UP
+⚠️ 直近サイン${recentSignals.length}件｜サイン点灯時の即エントリーを心がけると精度向上します
+${parseFloat(tradesPerDay) >= 2 ? '✨ 1日2回以上達成！この調子でトレンドを味方につけましょう' : '⏰ 1日2回以上を目標に、トレンドの波に乗るタイミングを増やしましょう'}`
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
