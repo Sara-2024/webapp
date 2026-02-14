@@ -1358,23 +1358,6 @@ app.get('/trade', (c) => {
                 </div>
             </div>
             
-            <!-- 次回サイン予定時刻表示 -->
-            <div class="bg-gradient-to-br from-blue-100 to-blue-50 rounded-lg shadow-md p-3 sm:p-4 mb-2 sm:mb-4">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center">
-                        <i class="fas fa-clock text-blue-600 text-2xl mr-3"></i>
-                        <div>
-                            <div class="text-xs sm:text-sm text-gray-600">次回サイン予定</div>
-                            <div id="nextSignalTime" class="text-lg sm:text-xl font-bold text-blue-700">計算中...</div>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-xs sm:text-sm text-gray-600">残り時間</div>
-                        <div id="timeUntilSignal" class="text-lg sm:text-xl font-bold text-orange-600">--</div>
-                    </div>
-                </div>
-            </div>
-            
             <!-- ローソク足チャート -->
             <div class="bg-white rounded-lg shadow-md p-2 sm:p-4 mb-2 sm:mb-4 flex-1 flex flex-col min-h-0">
                 <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
@@ -2202,9 +2185,6 @@ app.get('/trade', (c) => {
                         chartArea.scrollTop = chartArea.scrollHeight;
                     }, 500); // チャート描画完了を待つ
                 }
-                
-                // 初回サイン時刻を読み込み
-                await updateNextSignalTime();
             }
         })();
         
@@ -2226,9 +2206,6 @@ app.get('/trade', (c) => {
             
             // チャートも更新（ローソク足の途中経過を反映）
             await updateGold10Chart();
-            
-            // 次回サイン予定時刻を更新
-            await updateNextSignalTime();
             
             // 15分経過ポジションの自動決済チェック
             try {
@@ -2979,7 +2956,10 @@ app.get('/admin', (c) => {
     <div class="container mx-auto p-4 max-w-6xl">
         <!-- タブ -->
         <div class="flex space-x-2 mb-4">
-            <button onclick="showTab('users')" id="usersTab" class="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow">
+            <button onclick="showTab('system')" id="systemTab" class="flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow">
+                <i class="fas fa-chart-line mr-2"></i>システム情報
+            </button>
+            <button onclick="showTab('users')" id="usersTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
                 <i class="fas fa-users mr-2"></i>ユーザー管理
             </button>
             <button onclick="showTab('videos')" id="videosTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
@@ -2988,6 +2968,54 @@ app.get('/admin', (c) => {
             <button onclick="showTab('chat')" id="chatTab" class="flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow">
                 <i class="fas fa-comments mr-2"></i>チャット管理
             </button>
+        </div>
+
+        <!-- システム情報 -->
+        <div id="systemPanel" class="space-y-4">
+            <!-- 次回サイン予定 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-clock mr-2 text-blue-500"></i>次回サイン予定
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">最新サイン時刻</div>
+                        <div id="lastSignalTime" class="text-xl font-bold text-blue-700">--</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">次回サイン予定</div>
+                        <div id="nextSignalTime" class="text-xl font-bold text-green-700">--</div>
+                    </div>
+                    <div class="bg-orange-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">残り時間</div>
+                        <div id="timeUntilSignal" class="text-xl font-bold text-orange-700">--</div>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-gray-600">
+                    <p><i class="fas fa-info-circle mr-2"></i>サインは25-35分間隔で自動生成されます（平均30分）</p>
+                </div>
+            </div>
+            
+            <!-- GOLD10統計情報 -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-chart-bar mr-2 text-yellow-500"></i>GOLD10統計
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-yellow-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">総ローソク足数</div>
+                        <div id="totalCandles" class="text-xl font-bold text-yellow-700">--</div>
+                    </div>
+                    <div class="bg-purple-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">総サイン数</div>
+                        <div id="totalSignals" class="text-xl font-bold text-purple-700">--</div>
+                    </div>
+                    <div class="bg-indigo-50 rounded-lg p-4">
+                        <div class="text-sm text-gray-600 mb-1">現在価格</div>
+                        <div id="currentGoldPrice" class="text-xl font-bold text-indigo-700">--</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ユーザー管理 -->
@@ -3124,16 +3152,22 @@ app.get('/admin', (c) => {
     <script>
         function showTab(tab) {
             // パネルの表示切り替え
+            document.getElementById('systemPanel').classList.add('hidden');
             document.getElementById('usersPanel').classList.add('hidden');
             document.getElementById('videosPanel').classList.add('hidden');
             document.getElementById('chatPanel').classList.add('hidden');
             
             // タブのスタイル切り替え
+            document.getElementById('systemTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
             document.getElementById('usersTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
             document.getElementById('videosTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
             document.getElementById('chatTab').className = 'flex-1 bg-white text-gray-700 font-bold py-3 rounded-lg shadow';
             
-            if (tab === 'users') {
+            if (tab === 'system') {
+                document.getElementById('systemPanel').classList.remove('hidden');
+                document.getElementById('systemTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
+                loadSystemInfo();
+            } else if (tab === 'users') {
                 document.getElementById('usersPanel').classList.remove('hidden');
                 document.getElementById('usersTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
             } else if (tab === 'videos') {
@@ -3144,6 +3178,61 @@ app.get('/admin', (c) => {
                 document.getElementById('chatPanel').classList.remove('hidden');
                 document.getElementById('chatTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
                 loadAdminChat();
+            }
+        }
+        
+        // システム情報を読み込み
+        async function loadSystemInfo() {
+            try {
+                // サイン情報を取得
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
+                const signals = signalsResponse.data;
+                
+                // 最新サイン
+                if (signals.length > 0) {
+                    const latestSignal = signals[signals.length - 1];
+                    const latestTime = new Date(latestSignal.timestamp * 1000);
+                    const hours = String(latestTime.getUTCHours()).padStart(2, '0');
+                    const minutes = String(latestTime.getUTCMinutes()).padStart(2, '0');
+                    document.getElementById('lastSignalTime').textContent = hours + ':' + minutes + ' UTC';
+                    
+                    // 次回サイン予定（30分後）
+                    const nextTime = new Date(latestSignal.timestamp * 1000 + 30 * 60 * 1000);
+                    const nextHours = String(nextTime.getUTCHours()).padStart(2, '0');
+                    const nextMinutes = String(nextTime.getUTCMinutes()).padStart(2, '0');
+                    document.getElementById('nextSignalTime').textContent = nextHours + ':' + nextMinutes + ' UTC';
+                    
+                    // 残り時間
+                    const now = Date.now();
+                    const timeLeft = nextTime.getTime() - now;
+                    if (timeLeft < 0) {
+                        document.getElementById('timeUntilSignal').textContent = 'まもなく';
+                    } else {
+                        const minutesLeft = Math.floor(timeLeft / (60 * 1000));
+                        const secondsLeft = Math.floor((timeLeft % (60 * 1000)) / 1000);
+                        document.getElementById('timeUntilSignal').textContent = minutesLeft + '分' + secondsLeft + '秒';
+                    }
+                } else {
+                    document.getElementById('lastSignalTime').textContent = 'サインなし';
+                    document.getElementById('nextSignalTime').textContent = '不明';
+                    document.getElementById('timeUntilSignal').textContent = '--';
+                }
+                
+                // ローソク足情報を取得
+                const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
+                const candles = candlesResponse.data;
+                document.getElementById('totalCandles').textContent = candles.length + '本';
+                
+                // サイン数
+                document.getElementById('totalSignals').textContent = signals.length + '本';
+                
+                // 現在価格
+                if (candles.length > 0) {
+                    const latest = candles[candles.length - 1];
+                    document.getElementById('currentGoldPrice').textContent = '$' + latest.close.toFixed(2);
+                }
+            } catch (error) {
+                console.error('システム情報取得エラー:', error);
             }
         }
 
@@ -3327,8 +3416,18 @@ app.get('/admin', (c) => {
             e.target.value = e.target.value.replace(/[^0-9a-zA-Z]/g, '');
         });
 
+        // 初期化
         loadUsers();
         loadAdminVideos();
+        loadSystemInfo();
+        
+        // 10秒ごとにシステム情報を更新
+        setInterval(() => {
+            const systemPanel = document.getElementById('systemPanel');
+            if (!systemPanel.classList.contains('hidden')) {
+                loadSystemInfo();
+            }
+        }, 10000);
     </script>
 </body>
 </html>
