@@ -724,8 +724,8 @@ const generateCandleHandler = async (c: any) => {
   
   if (latestCandle) {
     const timeDiff = Math.abs(now - latestCandle.timestamp)
-    // 10分以上離れている場合は、新規生成として扱う
-    if (timeDiff > 600) {
+    // 1分以上離れている場合は、新規生成として扱う（UTC統一を徹底）
+    if (timeDiff > 60) {
       candleToUse = null
     }
   }
