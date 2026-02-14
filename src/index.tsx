@@ -1340,7 +1340,7 @@ app.get('/trade', (c) => {
                 </h2>
                 <p class="text-xs sm:text-sm text-gray-600">
                     <i class="fas fa-info-circle mr-1"></i>
-                    1分足ローソク足チャート（全ユーザー共通）
+                    30秒足ローソク足チャート（全ユーザー共通）
                 </p>
             </div>
             
