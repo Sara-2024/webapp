@@ -907,26 +907,94 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     ORDER BY timestamp DESC LIMIT 1
   `).bind(candleTime).first()
   
+  // 【慣性導入】過去3本の足を取得してボラティリティ計算
+  const recentCandles = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles 
+    WHERE timestamp < ?
+    ORDER BY timestamp DESC LIMIT 5
+  `).bind(candleTime).all()
+  
+  const recent = recentCandles.results as any[]
+  
   // 初期価格または連続価格
   let basePrice = prevCandle ? prevCandle.close : 4925.0
+  
+  // 【慣性導入】前の足の方向を判定
+  let prevDirection = 0 // 0: 初回, 1: 陽線, -1: 陰線
+  let prevBodySize = 0
+  if (prevCandle) {
+    const prevChange = prevCandle.close - prevCandle.open
+    prevDirection = prevChange > 0 ? 1 : (prevChange < 0 ? -1 : 0)
+    prevBodySize = Math.abs(prevChange)
+  }
+  
+  // 【慣性導入】過去3〜5本の平均ボラティリティを計算
+  let avgVolatility = 0.05 // デフォルト
+  if (recent.length >= 3) {
+    let totalVol = 0
+    for (let i = 0; i < Math.min(3, recent.length); i++) {
+      const c = recent[i]
+      const vol = c.high - c.low
+      totalVol += vol
+    }
+    avgVolatility = totalVol / Math.min(3, recent.length)
+  }
   
   // 30秒区間の1秒ごと価格を生成（内部計算用）
   const prices: number[] = []
   let currentPrice = basePrice
   
-  // トレンド成分（30秒持続）
-  const trendDirection = Math.random() > 0.5 ? 1 : -1
-  const trendStrength = 0.05 + Math.random() * 0.15 // 0.05-0.2ドル
+  // 【慣性導入】トレンド方向を前足の方向に従う確率を持たせる（60-70%）
+  let trendDirection = 0
+  if (prevDirection !== 0) {
+    // 60-70%の確率で前足の方向を引き継ぐ
+    const momentum = Math.random()
+    if (momentum < 0.65) {
+      trendDirection = prevDirection
+    } else {
+      trendDirection = -prevDirection
+    }
+  } else {
+    trendDirection = Math.random() > 0.5 ? 1 : -1
+  }
   
-  // ボラティリティ（ランダムウォーク）
-  const volatility = 0.02 + Math.random() * 0.08 // 0.02-0.1ドル
+  // 【慣性導入】方向転換時は小さな変動から始める
+  let trendStrength = 0.05 + Math.random() * 0.15 // 0.05-0.2ドル
+  if (prevDirection !== 0 && trendDirection !== prevDirection) {
+    // 方向転換：強度を30-50%に抑える
+    trendStrength = trendStrength * (0.3 + Math.random() * 0.2)
+  } else if (prevDirection !== 0 && trendDirection === prevDirection) {
+    // 継続：前回の足のサイズに応じて調整
+    if (prevBodySize > 10) {
+      // 大きな足の後は少し抑える
+      trendStrength = trendStrength * 0.7
+    }
+  }
   
+  // 【慣性導入】ボラティリティは過去平均の80-120%の範囲で徐々に変化
+  const targetVolatility = avgVolatility * (0.8 + Math.random() * 0.4)
+  const volatility = Math.max(0.02, Math.min(0.15, targetVolatility))
+  
+  // 【慣性導入】トレンドの加速度（序盤は弱く、中盤で強く、終盤でまた弱める）
   for (let i = 0; i < 30; i++) {
     // 市場変動成分（平均回帰）
     const meanReversion = (4925 - currentPrice) * 0.001 // 中心価格への微弱な引力
     
-    // トレンド成分
-    const trendComponent = trendDirection * trendStrength / 30
+    // 【慣性導入】トレンド成分：序盤・終盤は弱く、中盤は強い
+    const progress = i / 30
+    let accelerationFactor = 1.0
+    if (progress < 0.3) {
+      // 序盤：70-90%
+      accelerationFactor = 0.7 + progress
+    } else if (progress > 0.7) {
+      // 終盤：100-70%
+      accelerationFactor = 1.0 - (progress - 0.7) * 1.0
+    } else {
+      // 中盤：100-120%
+      accelerationFactor = 1.0 + (progress - 0.3) * 0.5
+    }
+    
+    const trendComponent = trendDirection * trendStrength * accelerationFactor / 30
     
     // ランダムウォーク成分
     const randomWalk = (Math.random() - 0.5) * volatility
@@ -959,11 +1027,11 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   const candleId = insertResult.meta.last_row_id
   
   // RSI計算
-  const recentCandles = await c.env.DB.prepare(`
+  const recentCandlesForRSI = await c.env.DB.prepare(`
     SELECT * FROM gold10_candles ORDER BY timestamp DESC LIMIT 15
   `).all()
   
-  const candlesForRSI = recentCandles.results.reverse() as any[]
+  const candlesForRSI = recentCandlesForRSI.results.reverse() as any[]
   const rsi = calculateRSI(candlesForRSI, 14)
   
   await c.env.DB.prepare(`
@@ -2977,11 +3045,160 @@ app.get('/trade', async (c) => {
             }
         })();
         
-        // GOLD10チャートを30秒ごとに更新（新しいローソク足とサイン生成）
-        // ランダムな遅延（0-5秒）を追加して、複数ユーザーの同時アクセスを分散
-        // 旧自動生成ロジックは削除されました
-        // 新しい連続価格モデルAPI (/api/gold10/generate-next-candle) のみ使用
-        // ローソク足は外部スクリプトまたは手動で生成してください
+        // ========================================
+        // 【Genspark 安定30秒自動生成モード】
+        // ========================================
+        // 目的：Genspark画面上で、30秒ごとにローソク足を自動生成
+        // ルール：
+        //   1. setInterval は1回しか作らない
+        //   2. 既にタイマーが存在する場合は新しく作らない
+        //   3. series.setData() は初回のみ
+        //   4. それ以降は series.update() のみ使用
+        //   5. lastClose はグローバル変数として保持する
+        //   6. 再描画・再実行時にタイマーを増やさない
+        // ========================================
+        
+        const showChart = ${showChart};
+        
+        if (showChart && !window.__candleEngineStarted) {
+            console.log('[Genspark] 🚀 30秒自動生成モード起動中...');
+            
+            window.__candleEngineStarted = true;
+            
+            // 慣性パラメータをグローバルに保持
+            window.__prevDirection = 0;  // 0: 初回, 1: 陽線, -1: 陰線
+            window.__avgVolatility = 0.05;  // デフォルトボラティリティ
+            window.__recentPrices = [];  // 過去3本の価格履歴
+            
+            // 初期価格（最新のローソク足のCloseから取得、なければデフォルト）
+            if (candlesDataWithRSI && candlesDataWithRSI.length > 0) {
+                window.__lastClose = candlesDataWithRSI[candlesDataWithRSI.length - 1].close;
+            } else {
+                window.__lastClose = 4925.0;
+            }
+            
+            console.log('[Genspark] 📊 初期価格:', window.__lastClose);
+            
+            // 30秒ごとに新しいローソク足を生成
+            window.__candleTimer = setInterval(async () => {
+                try {
+                    console.log('[Genspark] ⏰ 30秒タイマー発火 - 新しいローソク足を生成中...');
+                    
+                    const open = window.__lastClose;
+                    
+                    // 【慣性導入】前の足の方向を判定
+                    const prevDirection = window.__prevDirection;
+                    
+                    // 【慣性導入】トレンド方向を前足の方向に従う確率を持たせる（60-70%）
+                    let trendDirection = 0;
+                    if (prevDirection !== 0) {
+                        const momentum = Math.random();
+                        if (momentum < 0.65) {
+                            trendDirection = prevDirection;  // 65%の確率で同方向
+                        } else {
+                            trendDirection = -prevDirection;  // 35%の確率で反転
+                        }
+                    } else {
+                        trendDirection = Math.random() > 0.5 ? 1 : -1;
+                    }
+                    
+                    // 【慣性導入】方向転換時は小さな変動から始める
+                    let trendStrength = 0.05 + Math.random() * 0.15; // 0.05-0.2ドル
+                    if (prevDirection !== 0 && trendDirection !== prevDirection) {
+                        trendStrength = trendStrength * (0.3 + Math.random() * 0.2);  // 30-50%に抑制
+                    } else if (prevDirection !== 0 && trendDirection === prevDirection) {
+                        const prevBodySize = Math.abs(window.__recentPrices[window.__recentPrices.length - 1] - window.__recentPrices[window.__recentPrices.length - 2] || 0);
+                        if (prevBodySize > 10) {
+                            trendStrength = trendStrength * 0.7;  // 大きな足の後は70%に抑制
+                        }
+                    }
+                    
+                    // 【慣性導入】ボラティリティは過去平均の80-120%の範囲で徐々に変化
+                    const targetVolatility = window.__avgVolatility * (0.8 + Math.random() * 0.4);
+                    const volatility = Math.max(0.02, Math.min(0.15, targetVolatility));
+                    
+                    // 30秒区間の価格を生成（簡易版：3ポイント）
+                    const prices = [];
+                    let currentPrice = open;
+                    
+                    for (let i = 0; i < 10; i++) {
+                        const meanReversion = (4925 - currentPrice) * 0.001;
+                        const progress = i / 10;
+                        
+                        let accelerationFactor = 1.0;
+                        if (progress < 0.3) {
+                            accelerationFactor = 0.7 + progress;
+                        } else if (progress > 0.7) {
+                            accelerationFactor = 1.0 - (progress - 0.7) * 1.0;
+                        } else {
+                            accelerationFactor = 1.0 + (progress - 0.3) * 0.5;
+                        }
+                        
+                        const trendComponent = trendDirection * trendStrength * accelerationFactor / 10;
+                        const randomWalk = (Math.random() - 0.5) * volatility;
+                        
+                        currentPrice = currentPrice + meanReversion + trendComponent + randomWalk;
+                        prices.push(currentPrice);
+                    }
+                    
+                    const close = prices[prices.length - 1];
+                    const high = Math.max(open, close, ...prices);
+                    const low = Math.min(open, close, ...prices);
+                    
+                    // ローソク足データ
+                    const bar = {
+                        time: Math.floor(Date.now() / 1000),
+                        open: open,
+                        high: high,
+                        low: low,
+                        close: close,
+                    };
+                    
+                    // 【Lightweight Charts 固定モード】update() のみ使用
+                    if (candlestickSeries) {
+                        candlestickSeries.update(bar);
+                        console.log('[Genspark] ✅ ローソク足更新:', {
+                            time: new Date(bar.time * 1000).toISOString(),
+                            open: bar.open.toFixed(2),
+                            high: bar.high.toFixed(2),
+                            low: bar.low.toFixed(2),
+                            close: bar.close.toFixed(2)
+                        });
+                    }
+                    
+                    // グローバル変数を更新
+                    window.__lastClose = close;
+                    
+                    // 【慣性導入】方向を記録
+                    const change = close - open;
+                    window.__prevDirection = change > 0 ? 1 : (change < 0 ? -1 : 0);
+                    
+                    // 【慣性導入】価格履歴を更新
+                    window.__recentPrices.push(close);
+                    if (window.__recentPrices.length > 5) {
+                        window.__recentPrices.shift();
+                    }
+                    
+                    // 【慣性導入】ボラティリティを更新
+                    if (window.__recentPrices.length >= 3) {
+                        let totalVol = 0;
+                        for (let i = 1; i < Math.min(4, window.__recentPrices.length); i++) {
+                            totalVol += Math.abs(window.__recentPrices[i] - window.__recentPrices[i - 1]);
+                        }
+                        window.__avgVolatility = totalVol / Math.min(3, window.__recentPrices.length - 1);
+                    }
+                    
+                    // 表示価格を更新
+                    currentPrice = close;
+                    document.getElementById('gold10Price').textContent = '$' + close.toFixed(2);
+                    
+                } catch (error) {
+                    console.error('[Genspark] ❌ ローソク足生成エラー:', error);
+                }
+            }, 30000);  // 30秒ごと
+            
+            console.log('[Genspark] ✅ 30秒自動生成モード起動完了！タイマーID:', window.__candleTimer);
+        }
 
         // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
         setInterval(async () => {
