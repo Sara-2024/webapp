@@ -760,75 +760,31 @@ app.get('/api/gold10/signals', async (c) => {
 
 // 新しいローソク足とサインを生成（管理用エンドポイント - 本番では定期実行）
 // GETとPOSTの両方をサポート（外部Cronサービスから呼び出し可能）
-const generateCandleHandler = async (c: any) => {
-  // 現在時刻を取得
-  const now = Math.floor(Date.now() / 1000)
-  
-  // 🔒 重要: 現在時刻以前の最新ローソク足のみを取得（未来のローソク足は無視）
-  const latestCandle = await c.env.DB.prepare(`
-    SELECT * FROM gold10_candles
-    WHERE timestamp <= ?
-    ORDER BY timestamp DESC
-    LIMIT 1
-  `).bind(now).first() as Candle | null
+// ========== GOLD10 APIエンドポイント（ローソク足関連は管理者モニターのみで生成） ==========
 
-  // 最新のサインを取得（現在時刻以前のみ）
-  const latestSignal = await c.env.DB.prepare(`
-    SELECT * FROM gold10_signals
-    WHERE timestamp <= ?
-    ORDER BY timestamp DESC
-    LIMIT 1
-  `).bind(now).first() as Signal | null
-
-  // タイムスタンプの検証: 最新ローソク足が現在時刻から大きく離れている場合はリセット
-  let candleToUse = latestCandle
-  
-  if (latestCandle) {
-    // 念のため再度チェック（通常はクエリで除外済み）
-    if (latestCandle.timestamp > now + 60) {
-      console.warn('未来のローソク足を検出（本来はクエリで除外済み）:', {
-        latestCandleTime: latestCandle.timestamp,
-        currentTime: now,
-        timeDiff: latestCandle.timestamp - now
-      })
-      candleToUse = null  // 未来のローソク足は無視して新規生成
-    }
-    
-    // 次のローソク足の時刻（30秒後）
-    const nextCandleTime = latestCandle.timestamp + 30
-    
-    // まだ次のローソク足の時刻に達していない場合はスキップ
-    if (now < nextCandleTime) {
-      return c.json({ 
-        message: '次のローソク足の時刻まで待機中', 
-        skip: true,
-        nextCandleTime,
-        currentTime: now,
-        remainingSeconds: nextCandleTime - now
-      })
-    }
-    
-    const timeDiff = Math.abs(now - latestCandle.timestamp)
-    // 5分以上離れている場合のみ、新規生成として扱う
-    if (timeDiff > 300) {
-      candleToUse = null
-    }
+// 管理者：ローソク足を直接保存
+app.post('/api/admin/gold10/save-candle', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
   }
 
-  // 新しいローソク足を生成（現在時刻を渡す）
-  const newCandle = generateCandle(candleToUse, 4950, now)
+  const { timestamp, open, high, low, close } = await c.req.json()
+  
+  if (!timestamp || !open || !high || !low || !close) {
+    return c.json({ error: '必須パラメータが不足しています' }, 400)
+  }
 
-  // 🔒 重要: 同じタイムスタンプのローソク足が既に存在するかチェック
+  // 同じタイムスタンプのローソク足が既に存在するかチェック
   const existingCandle = await c.env.DB.prepare(`
     SELECT id FROM gold10_candles WHERE timestamp = ?
-  `).bind(newCandle.timestamp).first()
+  `).bind(timestamp).first()
 
-  // 既に存在する場合はスキップ（複数ユーザーの同時アクセス対策）
   if (existingCandle) {
     return c.json({ 
-      message: 'このタイムスタンプのローソク足は既に存在します', 
-      skip: true,
-      timestamp: newCandle.timestamp,
+      success: false,
+      message: 'このタイムスタンプのローソク足は既に存在します',
+      timestamp: timestamp,
       existingId: existingCandle.id
     })
   }
@@ -837,13 +793,7 @@ const generateCandleHandler = async (c: any) => {
   const insertResult = await c.env.DB.prepare(`
     INSERT INTO gold10_candles (timestamp, open, high, low, close)
     VALUES (?, ?, ?, ?, ?)
-  `).bind(
-    newCandle.timestamp,
-    newCandle.open,
-    newCandle.high,
-    newCandle.low,
-    newCandle.close
-  ).run()
+  `).bind(timestamp, open, high, low, close).run()
 
   const candleId = insertResult.meta.last_row_id
 
@@ -862,38 +812,13 @@ const generateCandleHandler = async (c: any) => {
     UPDATE gold10_candles SET rsi = ? WHERE id = ?
   `).bind(rsi, candleId).run()
 
-  // サイン生成判定
-  let newSignal: Signal | null = null
-  const lastSignalTime = latestSignal ? latestSignal.timestamp : null
-  
-  if (shouldGenerateSignal(lastSignalTime)) {
-    newSignal = generateSignal({ ...newCandle, rsi }, candleId as number, rsi)
-    
-    // サインをDBに保存
-    await c.env.DB.prepare(`
-      INSERT INTO gold10_signals (candle_id, timestamp, type, price, target_price, success, rsi)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      newSignal.candle_id,
-      newSignal.timestamp,
-      newSignal.type,
-      newSignal.price,
-      newSignal.target_price,
-      newSignal.success,
-      newSignal.rsi
-    ).run()
-  }
-
   return c.json({
-    candle: { ...newCandle, id: candleId, rsi },
-    signal: newSignal,
-    message: '新しいローソク足とサインを生成しました'
+    success: true,
+    candle: { id: candleId, timestamp, open, high, low, close, rsi },
+    message: 'ローソク足を保存しました'
   })
-}
+})
 
-// POSTとGETの両方でアクセス可能にする
-app.post('/api/gold10/generate', generateCandleHandler)
-app.get('/api/gold10/generate', generateCandleHandler)
 
 // 管理者：即座にサイン生成
 app.post('/api/admin/gold10/generate-signal', async (c) => {
@@ -4738,30 +4663,83 @@ app.get('/admin-monitor', (c) => {
             }
         }
 
-        // ローソク足生成を実行
+        // ローソク足生成を実行（直接DBに保存）
         async function generateCandle() {
             try {
                 addLog('ローソク足生成をリクエスト中...', 'info');
                 
-                const response = await axios.post('/api/gold10/generate');
+                // 現在時刻を00秒または30秒に整列
+                const now = Math.floor(Date.now() / 1000);
+                const alignedTimestamp = Math.floor(now / 30) * 30;
                 
-                if (response.data.skip) {
-                    addLog('スキップ: ' + response.data.message, 'skip');
+                // 最新のローソク足を取得
+                const latestResponse = await axios.get('/api/gold10/candles?hours=1');
+                const candles = latestResponse.data;
+                const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
+                
+                // 既に同じタイムスタンプのローソク足が存在する場合はスキップ
+                if (latestCandle && latestCandle.timestamp === alignedTimestamp) {
+                    addLog('スキップ: このタイムスタンプのローソク足は既に存在します', 'skip');
+                    return;
+                }
+                
+                // 前のローソク足の時刻チェック
+                if (latestCandle && latestCandle.timestamp + 30 > alignedTimestamp) {
+                    const remaining = (latestCandle.timestamp + 30) - now;
+                    addLog(\`スキップ: 次のローソク足まで\${remaining}秒待機中\`, 'skip');
+                    return;
+                }
+                
+                // 新しいローソク足のデータを生成
+                let open, close, high, low;
+                
+                if (latestCandle) {
+                    // 前のローソク足の終値を始値とする
+                    open = latestCandle.close;
                 } else {
+                    // 初回生成時
+                    open = 4925;
+                }
+                
+                // トレンド方向をランダムに決定
+                const isUptrend = Math.random() > 0.5;
+                const priceMove = 0.5 + Math.random() * 1.5;
+                
+                if (isUptrend) {
+                    close = open + priceMove * (0.3 + Math.random() * 0.7);
+                    high = Math.max(open, close) + Math.random() * 2;
+                    low = Math.min(open, close) - Math.random() * 1.5;
+                } else {
+                    close = open - priceMove * (0.3 + Math.random() * 0.7);
+                    high = Math.max(open, close) + Math.random() * 1.5;
+                    low = Math.min(open, close) - Math.random() * 2;
+                }
+                
+                // 価格範囲制限（4900-4945）
+                close = Math.max(4900, Math.min(4945, close));
+                high = Math.max(4900, Math.min(4950, high));
+                low = Math.max(4890, Math.min(4950, low));
+                
+                // DBに保存するためのリクエスト
+                const saveResponse = await axios.post('/api/admin/gold10/save-candle', {
+                    timestamp: alignedTimestamp,
+                    open: open,
+                    high: high,
+                    low: low,
+                    close: close
+                });
+                
+                if (saveResponse.data.success) {
                     successCount++;
                     document.getElementById('successCount').textContent = successCount + '本';
                     
-                    const candle = response.data.candle;
-                    const time = new Date(candle.timestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false });
-                    addLog(\`✅ ローソク足生成成功 - 時刻: \${time}, 価格: $\${candle.close.toFixed(2)}, RSI: \${candle.rsi?.toFixed(1) || '--'}\`, 'success');
-                    
-                    if (response.data.signal) {
-                        const signal = response.data.signal;
-                        addLog(\`🔔 サインも生成されました - タイプ: \${signal.type}, 価格: $\${signal.price.toFixed(2)}\`, 'warning');
-                    }
+                    const time = new Date(alignedTimestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false });
+                    addLog(\`✅ ローソク足生成成功 - 時刻: \${time}, 価格: $\${close.toFixed(2)}\`, 'success');
                     
                     // 最新情報を更新
                     await updateLatestCandle();
+                } else {
+                    addLog('スキップ: ' + saveResponse.data.message, 'skip');
                 }
             } catch (error) {
                 console.error('ローソク足生成エラー:', error);
@@ -4794,24 +4772,32 @@ app.get('/admin-monitor', (c) => {
         async function startAutoGeneration() {
             // 初回実行
             addLog('自動生成タイマーを開始しました', 'success');
+            addLog('⏰ 毎分00秒と30秒にローソク足を生成します', 'info');
             await updateLatestCandle();
 
-            // 1分後のタイムスタンプを計算
-            const oneMinuteLater = Date.now() + 60000;
-            addLog(\`⏰ 1分後（\${new Date(oneMinuteLater).toLocaleTimeString('ja-JP')}\）から30秒周期に切り替えます\`, 'warning');
-
-            // 次回実行時刻を計算（30秒境界）
+            // 次回実行時刻を計算（00秒または30秒）
             function calculateNextExecution() {
                 const now = Math.floor(Date.now() / 1000);
                 const nextBoundary = Math.ceil(now / 30) * 30;
                 return nextBoundary;
             }
-
-            // 30秒ごとに実行
-            setInterval(async () => {
-                nextExecutionTime = calculateNextExecution();
-                await generateCandle();
-            }, 30000);
+            
+            // 次の00秒または30秒まで待機してから実行
+            function scheduleNextGeneration() {
+                const now = Date.now();
+                const currentSeconds = Math.floor(now / 1000);
+                const nextBoundary = Math.ceil(currentSeconds / 30) * 30;
+                const msUntilNext = (nextBoundary * 1000) - now;
+                
+                setTimeout(async () => {
+                    await generateCandle();
+                    // 次の30秒後に再スケジュール
+                    scheduleNextGeneration();
+                }, msUntilNext);
+            }
+            
+            // 初回スケジュール
+            scheduleNextGeneration();
 
             // 予約サインを1分ごとにチェック
             setInterval(checkReservations, 60000);
