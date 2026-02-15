@@ -930,8 +930,8 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     // 次の価格
     currentPrice = currentPrice + meanReversion + trendComponent + randomWalk + userImpact
     
-    // 価格範囲制限
-    currentPrice = Math.max(4900, Math.min(4945, currentPrice))
+    // 価格範囲制限を削除：自然な市場価格変動を許可
+    // 旧コード: currentPrice = Math.max(4900, Math.min(4945, currentPrice))
     
     prices.push(currentPrice)
   }
