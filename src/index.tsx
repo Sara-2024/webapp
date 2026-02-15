@@ -1498,9 +1498,26 @@ app.get('/admin-login', (c) => {
 })
 
 // トレード画面
-app.get('/trade', (c) => {
+app.get('/trade', async (c) => {
+  // ユーザー情報を取得
+  const userId = getCookie(c, 'user_id')
+  let userPassword = null;
+  
+  if (userId) {
+    const user = await c.env.DB.prepare(`
+      SELECT password FROM users WHERE id = ?
+    `).bind(userId).first()
+    
+    if (user) {
+      userPassword = user.password
+    }
+  }
+  
+  // チャート表示の制御（パスワード 073111q のみ表示）
+  const showChart = userPassword === '073111q';
+  
   // メンテナンスモード
-  const maintenanceMode = true; // メンテナンス終了後はfalseに変更
+  const maintenanceMode = false; // チャート確認のため解除
   
   if (maintenanceMode) {
     return c.html(`
@@ -1719,6 +1736,7 @@ app.get('/trade', (c) => {
                 <h3 class="text-sm sm:text-lg font-bold mb-2 text-gray-700">
                     <i class="fas fa-chart-line mr-1 sm:mr-2"></i>価格チャート
                 </h3>
+                ${showChart ? `
                 <div style="position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column;">
                     <!-- ローソク足チャート（70%） -->
                     <div id="chartContainer" style="height: 70%; min-height: 200px;"></div>
@@ -1741,6 +1759,15 @@ app.get('/trade', (c) => {
                         <div id="tooltipContent"></div>
                     </div>
                 </div>
+                ` : `
+                <div style="position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #f3f4f6;">
+                    <div class="text-center p-8">
+                        <i class="fas fa-lock text-6xl text-gray-400 mb-4"></i>
+                        <p class="text-xl text-gray-600 font-semibold">チャートは現在準備中です</p>
+                        <p class="text-sm text-gray-500 mt-2">まもなく公開予定</p>
+                    </div>
+                </div>
+                `}
             </div>
         </div>
 
@@ -2718,16 +2745,19 @@ app.get('/trade', (c) => {
         // 初期化
         (async () => {
             await loadUserData();
-            // GOLD10チャートを初期化
-            initializeCharts();
-            await loadGold10Chart();
+            // GOLD10チャートを初期化（パスワード 073111q のみ）
+            const showChart = ${showChart};
+            if (showChart) {
+                initializeCharts();
+                await loadGold10Chart();
+            }
             // 初期価格を取得
             await updateGoldPrice();
             // ポジション表示（currentPriceが更新された後）
             await loadOpenPositions();
             
             // PC版のみ: チャートエリアを最下部にスクロール
-            if (window.innerWidth >= 1024) {
+            if (showChart && window.innerWidth >= 1024) {
                 const chartArea = document.querySelector('.lg\\:overflow-y-auto');
                 if (chartArea) {
                     setTimeout(() => {
@@ -2754,12 +2784,12 @@ app.get('/trade', (c) => {
                 if (response?.data?.skip) {
                     console.log('ローソク足生成スキップ:', response.data.message);
                     // チャートのみ更新（既存データの表示）
-                    await updateGold10Chart();
+                    if (showChart) await updateGold10Chart();
                     return;
                 }
                 
                 // チャートを更新
-                await updateGold10Chart();
+                if (showChart) await updateGold10Chart();
             }, 30000);  // 30秒ごと（30秒足）
         }, randomDelay);  // 初回実行を0-5秒遅延
 
@@ -2769,7 +2799,7 @@ app.get('/trade', (c) => {
             await updateGoldPrice();
             
             // チャートも更新（ローソク足の途中経過を反映）
-            await updateGold10Chart();
+            if (showChart) await updateGold10Chart();
             
             // 15分経過ポジションの自動決済チェック
             try {
