@@ -1729,8 +1729,8 @@ app.get('/trade', async (c) => {
     }
   }
   
-  // チャート表示の制御（パスワード 073111q のみ表示）
-  const showChart = userPassword === '073111q';
+  // チャート表示の制御（全ユーザーに解放）
+  const showChart = true;
   
   // メンテナンスモード
   const maintenanceMode = false; // チャート確認のため解除
