@@ -852,32 +852,28 @@ app.post('/api/gold10/trade-impact', async (c) => {
 
 // 【新価格生成エンジン】次の30秒足を生成
 app.post('/api/gold10/generate-next-candle', async (c) => {
+  // ⚠️ デバッグ用：リクエスト元を記録
+  const clientIP = c.req.header('CF-Connecting-IP') || c.req.header('X-Real-IP') || 'unknown';
+  const userAgent = c.req.header('User-Agent') || 'unknown';
+  console.log(`[CANDLE-GEN] Request from IP: ${clientIP}, User-Agent: ${userAgent}`);
+  
   // リクエストボディから指定タイムスタンプを取得（任意）
   let customTimestamp = null
   try {
     const body = await c.req.json()
     customTimestamp = body.timestamp
+    console.log(`[CANDLE-GEN] Custom timestamp: ${customTimestamp}`);
   } catch (e) {
     // JSON パースエラー時は無視（ボディなし）
+    console.log(`[CANDLE-GEN] No custom timestamp (using current time)`);
   }
   
   let candleTime
   const now = Math.floor(Date.now() / 1000)
   
   if (customTimestamp) {
-    // カスタムタイムスタンプ（テスト用）
+    // カスタムタイムスタンプ（過去・現在・未来すべて許可 - 重複チェックで防御）
     candleTime = Math.floor(customTimestamp / 30) * 30 // 30秒境界に揃える
-    
-    // ⚠️ 未来時刻の防止：現在時刻+5分以上先の生成を禁止
-    if (candleTime > now + 300) {
-      return c.json({ 
-        success: false, 
-        message: '未来のタイムスタンプは生成できません（現在時刻+5分以内のみ許可）',
-        timestamp: candleTime,
-        current_time: now,
-        diff_seconds: candleTime - now
-      }, 400)
-    }
   } else {
     // 現在時刻（通常運用）
     candleTime = Math.floor(now / 30) * 30
