@@ -108,11 +108,18 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
     open = basePrice
   }
 
+  // 価格を4900〜4950の範囲内に維持するため、openが範囲外なら補正
+  if (open < 4900) {
+    open = 4900 + Math.random() * 10
+  } else if (open > 4950) {
+    open = 4945 - Math.random() * 10
+  }
+
   // トレンド方向をランダムに決定（上昇50%、下降50%）
   const isUptrend = Math.random() > 0.5
 
-  // 価格変動幅（±1〜3ドル程度で自然な変動）
-  const priceMove = 1 + Math.random() * 2
+  // 価格変動幅（±0.5〜2ドル程度で自然な変動）
+  const priceMove = 0.5 + Math.random() * 1.5
 
   if (isUptrend) {
     close = open + priceMove * (0.3 + Math.random() * 0.7)
@@ -124,13 +131,11 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
     low = Math.min(open, close) - Math.random() * 2
   }
   
-  // 価格を4900〜4950の範囲内に制限
+  // closeが範囲外にならないように制限（重要：openは変更しない）
   if (close < 4900) {
-    close = 4900 + Math.random() * 5
-    open = close - priceMove * 0.5
+    close = 4900 + Math.random() * 3
   } else if (close > 4950) {
-    close = 4950 - Math.random() * 5
-    open = close + priceMove * 0.5
+    close = 4945 - Math.random() * 3
   }
   
   return {
