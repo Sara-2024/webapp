@@ -2177,7 +2177,7 @@ app.get('/trade', (c) => {
                     
                     // チャートの表示範囲を最新データに合わせる
                     const latestTime = candleData[candleData.length - 1].time;
-                    const earliestTime = candleData[Math.max(0, candleData.length - 120)].time; // 最新120本（2時間分）を表示
+                    const earliestTime = candleData[Math.max(0, candleData.length - 100)].time; // 最新100本を表示
                     chart.timeScale().setVisibleRange({
                         from: earliestTime,
                         to: latestTime
@@ -2212,8 +2212,8 @@ app.get('/trade', (c) => {
 
                 // サインをマーカーとして表示（表示範囲内のみ）
                 if (signals.length > 0 && candleData.length > 0) {
-                    // 🔒 表示範囲の開始時刻を取得（最新120本分 = 1時間）
-                    const displayStartTime = candleData[Math.max(0, candleData.length - 120)].time;
+                    // 🔒 表示範囲の開始時刻を取得（最新100本）
+                    const displayStartTime = candleData[Math.max(0, candleData.length - 100)].time;
                     
                     // 表示範囲内のサインのみフィルタリング（左端にサインが溜まらないように）
                     const visibleSignals = signals.filter(signal => signal.timestamp >= displayStartTime);
@@ -4662,9 +4662,9 @@ app.get('/admin-monitor', (c) => {
 
             adminCandlestickSeries.setData(chartData);
             
-            // 最新60本（1分間）を表示
-            if (chartData.length > 60) {
-                const fromTime = chartData[chartData.length - 60].time;
+            // 最新100本を表示
+            if (chartData.length > 100) {
+                const fromTime = chartData[chartData.length - 100].time;
                 const toTime = chartData[chartData.length - 1].time;
                 adminChart.timeScale().setVisibleRange({
                     from: fromTime,
@@ -4796,18 +4796,22 @@ app.get('/admin-monitor', (c) => {
             addLog('自動生成タイマーを開始しました', 'success');
             await updateLatestCandle();
 
-            // 次回実行時刻を計算（1秒境界）
+            // 1分後のタイムスタンプを計算
+            const oneMinuteLater = Date.now() + 60000;
+            addLog(\`⏰ 1分後（\${new Date(oneMinuteLater).toLocaleTimeString('ja-JP')}\）から30秒周期に切り替えます\`, 'warning');
+
+            // 次回実行時刻を計算（30秒境界）
             function calculateNextExecution() {
                 const now = Math.floor(Date.now() / 1000);
-                const nextBoundary = now + 1;
+                const nextBoundary = Math.ceil(now / 30) * 30;
                 return nextBoundary;
             }
 
-            // 1秒ごとに実行
+            // 30秒ごとに実行
             setInterval(async () => {
                 nextExecutionTime = calculateNextExecution();
                 await generateCandle();
-            }, 1000);
+            }, 30000);
 
             // 予約サインを1分ごとにチェック
             setInterval(checkReservations, 60000);

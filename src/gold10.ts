@@ -80,19 +80,19 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
   const now = currentTime !== undefined ? currentTime : Math.floor(Date.now() / 1000)
   
   if (previousCandle) {
-    // 前のローソク足のタイムスタンプ + 1秒（1秒足）
-    const nextTimestamp = previousCandle.timestamp + 1
+    // 前のローソク足のタイムスタンプ + 30秒（30秒足）
+    const nextTimestamp = previousCandle.timestamp + 30
     
     // 🔒 次のタイムスタンプが現在時刻を大きく超えている場合は現在時刻を使用
-    if (nextTimestamp > now + 10) {
-      // 異常な未来の時刻になる場合は、現在時刻を1秒単位に丸めて使用
-      timestamp = Math.floor(now)
+    if (nextTimestamp > now + 60) {
+      // 異常な未来の時刻になる場合は、現在時刻を30秒単位に丸めて使用
+      timestamp = Math.floor(now / 30) * 30
     } else {
       timestamp = nextTimestamp
     }
   } else {
-    // 初回生成時は現在時刻を1秒単位に丸める
-    timestamp = Math.floor(now)
+    // 初回生成時は現在時刻を30秒単位に丸める
+    timestamp = Math.floor(now / 30) * 30
   }
 
   let open: number
@@ -108,12 +108,7 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
     open = basePrice
   }
 
-  // 価格を4900〜4950の範囲内に維持するため、openが範囲外なら補正
-  if (open < 4900) {
-    open = 4900 + Math.random() * 10
-  } else if (open > 4950) {
-    open = 4945 - Math.random() * 10
-  }
+  // 価格を4900〜4950の範囲内に維持（closeで制限し、openは前のcloseをそのまま使用）
 
   // トレンド方向をランダムに決定（上昇50%、下降50%）
   const isUptrend = Math.random() > 0.5
@@ -131,12 +126,10 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
     low = Math.min(open, close) - Math.random() * 2
   }
   
-  // closeが範囲外にならないように制限（重要：openは変更しない）
-  if (close < 4900) {
-    close = 4900 + Math.random() * 3
-  } else if (close > 4950) {
-    close = 4945 - Math.random() * 3
-  }
+  // closeとhigh/lowを範囲内に制限（openは前のcloseをそのまま維持）
+  close = Math.max(4900, Math.min(4945, close))
+  high = Math.max(4900, Math.min(4950, high))
+  low = Math.max(4890, Math.min(4950, low))
   
   return {
     timestamp,
