@@ -4857,106 +4857,12 @@ app.get('/admin-monitor', (c) => {
                 } else {
                     addLog('スキップ: ' + response.data.message, 'skip');
                 }
-                
-                // 現在時刻を00秒または30秒に整列
-                const now = Math.floor(Date.now() / 1000);
-                const candleTimestamp = Math.floor(now / 30) * 30;
-                
-                // この区間のローソク足が既に存在するかチェック
-                const existingResponse = await axios.get(\`/api/gold10/candle-exists?timestamp=\${candleTimestamp}\`);
-                if (existingResponse.data.exists) {
-                    addLog('スキップ: このタイムスタンプのローソク足は既に存在します', 'skip');
-                    return;
-                }
-                
-                // 最新のローソク足を取得
-                const latestResponse = await axios.get('/api/gold10/candles?hours=1');
-                const candles = latestResponse.data;
-                const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
-                
-                // 四本値を生成
-                let open, close, high, low;
-                
-                if (latestCandle) {
-                    // Open = 前のローソク足のClose
-                    open = latestCandle.close;
-                } else {
-                    // 初回生成時
-                    open = 4925;
-                }
-                
-                // 価格変動を生成（±0.1〜0.5ドル）- より自然な動きに
-                const volatility = 0.1 + Math.random() * 0.4;
-                
-                // トレンド継続の確率（70%で前の動きを継承）
-                let direction;
-                if (latestCandle && candles.length >= 2) {
-                    const prevCandle = candles[candles.length - 2];
-                    const prevDirection = latestCandle.close > prevCandle.close ? 1 : -1;
-                    direction = Math.random() > 0.3 ? prevDirection : -prevDirection;
-                } else {
-                    direction = Math.random() > 0.5 ? 1 : -1;
-                }
-                
-                const priceChange = direction * volatility;
-                
-                // Close を計算（範囲制限: 4900-4945）
-                close = Math.max(4900, Math.min(4945, open + priceChange));
-                
-                // 陽線か陰線かを判定
-                const isBullish = close >= open;
-                
-                if (isBullish) {
-                    // 陽線: Open < Close
-                    // High = Close + 上ヒゲ（0〜0.3ドル）- より小さなヒゲに
-                    high = close + Math.random() * 0.3;
-                    // Low = Open - 下ヒゲ（0〜0.2ドル）
-                    low = open - Math.random() * 0.2;
-                } else {
-                    // 陰線: Open > Close
-                    // High = Open + 上ヒゲ（0〜0.3ドル）
-                    high = open + Math.random() * 0.3;
-                    // Low = Close - 下ヒゲ（0〜0.2ドル）
-                    low = close - Math.random() * 0.2;
-                }
-                
-                // High/Low の範囲制限（4890-4950）
-                high = Math.min(4950, high);
-                low = Math.max(4890, low);
-                
-                // 最終チェック: High >= max(Open, Close) && Low <= min(Open, Close)
-                high = Math.max(high, open, close);
-                low = Math.min(low, open, close);
-                
-                // DBに保存
-                const saveResponse = await axios.post('/api/admin/gold10/save-candle', {
-                    timestamp: candleTimestamp,
-                    open: open,
-                    high: high,
-                    low: low,
-                    close: close
-                });
-                
-                if (saveResponse.data.success) {
-                    successCount++;
-                    document.getElementById('successCount').textContent = successCount + '本';
-                    
-                    const candleType = isBullish ? '陽線↑' : '陰線↓';
-                    const time = new Date(candleTimestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false });
-                    addLog(\`✅ 30秒足生成成功 - 時刻: \${time}, \${candleType}, O:\${open.toFixed(2)} H:\${high.toFixed(2)} L:\${low.toFixed(2)} C:\${close.toFixed(2)}\`, 'success');
-                    
-                    // 最新情報を更新
-                    await updateLatestCandle();
-                } else {
-                    addLog('エラー: ' + saveResponse.data.message, 'error');
-                }
             } catch (error) {
                 console.error('ローソク足生成エラー:', error);
                 addLog('❌ エラー: ' + (error.response?.data?.error || error.message), 'error');
             }
         }
 
-        // タイマー開始
         // 予約サイン実行チェック（1分ごと）
         async function checkReservations() {
             try {
