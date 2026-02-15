@@ -4703,7 +4703,7 @@ app.get('/admin-monitor', (c) => {
             }
         }
 
-        // 30秒足を生成（シンプル版）
+        // 30秒足を生成（自然なローソク足ロジック）
         async function generateCandle() {
             try {
                 addLog('30秒足を生成中...', 'info');
@@ -4735,19 +4735,38 @@ app.get('/admin-monitor', (c) => {
                     open = 4925;
                 }
                 
-                // ランダムな価格変動を生成
-                const volatility = 0.5 + Math.random() * 1.5; // 0.5〜2.0ドル
+                // 価格変動を生成（±0.5〜2.0ドル）
+                const volatility = 0.5 + Math.random() * 1.5;
                 const direction = Math.random() > 0.5 ? 1 : -1;
-                close = open + (direction * volatility * (0.3 + Math.random() * 0.7));
+                const priceChange = direction * volatility;
                 
-                // High と Low を生成
-                high = Math.max(open, close) + Math.random() * 1.5;
-                low = Math.min(open, close) - Math.random() * 1.5;
+                // Close を計算（範囲制限: 4900-4945）
+                close = Math.max(4900, Math.min(4945, open + priceChange));
                 
-                // 価格範囲制限（4900-4945）
-                close = Math.max(4900, Math.min(4945, close));
-                high = Math.max(4900, Math.min(4950, high));
-                low = Math.max(4890, Math.min(4950, low));
+                // 陽線か陰線かを判定
+                const isBullish = close >= open;
+                
+                if (isBullish) {
+                    // 陽線: Open < Close
+                    // High = Close + 上ヒゲ（0〜1.5ドル）
+                    high = close + Math.random() * 1.5;
+                    // Low = Open - 下ヒゲ（0〜1.0ドル）
+                    low = open - Math.random() * 1.0;
+                } else {
+                    // 陰線: Open > Close
+                    // High = Open + 上ヒゲ（0〜1.5ドル）
+                    high = open + Math.random() * 1.5;
+                    // Low = Close - 下ヒゲ（0〜1.0ドル）
+                    low = close - Math.random() * 1.0;
+                }
+                
+                // High/Low の範囲制限（4890-4950）
+                high = Math.min(4950, high);
+                low = Math.max(4890, low);
+                
+                // 最終チェック: High >= max(Open, Close) && Low <= min(Open, Close)
+                high = Math.max(high, open, close);
+                low = Math.min(low, open, close);
                 
                 // DBに保存
                 const saveResponse = await axios.post('/api/admin/gold10/save-candle', {
@@ -4762,8 +4781,9 @@ app.get('/admin-monitor', (c) => {
                     successCount++;
                     document.getElementById('successCount').textContent = successCount + '本';
                     
+                    const candleType = isBullish ? '陽線↑' : '陰線↓';
                     const time = new Date(candleTimestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false });
-                    addLog(\`✅ 30秒足生成成功 - 時刻: \${time}, O:\${open.toFixed(2)} H:\${high.toFixed(2)} L:\${low.toFixed(2)} C:\${close.toFixed(2)}\`, 'success');
+                    addLog(\`✅ 30秒足生成成功 - 時刻: \${time}, \${candleType}, O:\${open.toFixed(2)} H:\${high.toFixed(2)} L:\${low.toFixed(2)} C:\${close.toFixed(2)}\`, 'success');
                     
                     // 最新情報を更新
                     await updateLatestCandle();
