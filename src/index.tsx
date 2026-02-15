@@ -2152,7 +2152,9 @@ app.get('/trade', async (c) => {
                     });
                     
                     // 価格軸を自動調整（チャートが切れるのを防ぐ）
+                    chart.priceScale('right').applyOptions({ autoScale: true });
                     chart.timeScale().fitContent();
+                    macdChart.priceScale('right').applyOptions({ autoScale: true });
                     macdChart.timeScale().fitContent();
                     
                     // 最新価格とRSIを表示
@@ -4642,6 +4644,9 @@ app.get('/admin-monitor', (c) => {
             }
             
             // 価格軸を自動調整（チャートが切れるのを防ぐ）
+            adminChart.priceScale('right').applyOptions({
+                autoScale: true
+            });
             adminChart.timeScale().fitContent();
         }
 
