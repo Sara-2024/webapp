@@ -1330,9 +1330,16 @@ app.post('/api/chat/messages', async (c) => {
     VALUES (?, ?, ?)
   `).bind(userId, user?.username, message).run()
 
+  // 🎁 チャット送信で1ポイント付与
+  await c.env.DB.prepare(`
+    UPDATE users SET balance = balance + 1 WHERE id = ?
+  `).bind(userId).run()
+
   return c.json({
     success: true,
-    messageId: result.meta.last_row_id
+    messageId: result.meta.last_row_id,
+    pointsAwarded: 1,
+    message: 'メッセージを送信しました。1ポイント獲得！'
   })
 })
 
@@ -2545,9 +2552,39 @@ app.get('/trade', (c) => {
             if (!message) return;
 
             try {
-                await axios.post('/api/chat/messages', { message });
+                const response = await axios.post('/api/chat/messages', { message });
                 input.value = '';
                 await loadChatMessages();
+                
+                // 🎁 ポイント獲得通知
+                if (response.data.pointsAwarded) {
+                    // 残高を更新
+                    await loadUserData();
+                    
+                    // 通知を表示（既存の通知システムを使用）
+                    const notification = document.getElementById('notification');
+                    const icon = document.getElementById('notificationIcon');
+                    const titleEl = document.getElementById('notificationTitle');
+                    const messageEl = document.getElementById('notificationMessage');
+                    const container = notification.querySelector('div');
+                    
+                    container.className = 'bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4 border-yellow-500';
+                    icon.className = 'fas fa-star text-5xl mr-4 text-yellow-500';
+                    titleEl.textContent = '🎁 ポイント獲得！';
+                    messageEl.textContent = 'チャットメッセージ送信で1ポイント獲得しました！';
+                    
+                    notification.classList.remove('hidden');
+                    notification.classList.add('notification-enter');
+                    
+                    setTimeout(() => {
+                        notification.classList.remove('notification-enter');
+                        notification.classList.add('notification-exit');
+                        setTimeout(() => {
+                            notification.classList.add('hidden');
+                            notification.classList.remove('notification-exit');
+                        }, 300);
+                    }, 3000); // 3秒間表示
+                }
             } catch (error) {
                 alert('メッセージ送信に失敗しました');
             }
@@ -3352,9 +3389,22 @@ app.get('/chat', (c) => {
             if (!message) return;
 
             try {
-                await axios.post('/api/chat/messages', { message });
+                const response = await axios.post('/api/chat/messages', { message });
                 input.value = '';
                 await loadMessages();
+                
+                // 🎁 ポイント獲得アラート（チャットページ用）
+                if (response.data.pointsAwarded) {
+                    // 簡易通知を表示
+                    const tempNotification = document.createElement('div');
+                    tempNotification.className = 'fixed top-4 right-4 bg-yellow-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce';
+                    tempNotification.innerHTML = '<i class="fas fa-star mr-2"></i>+1ポイント獲得！';
+                    document.body.appendChild(tempNotification);
+                    
+                    setTimeout(() => {
+                        tempNotification.remove();
+                    }, 2000);
+                }
             } catch (error) {
                 alert('メッセージ送信に失敗しました');
             }
