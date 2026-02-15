@@ -3334,7 +3334,7 @@ app.get('/signal-history', (c) => {
     <div class="container mx-auto px-4 py-8">
         <div class="bg-white rounded-lg shadow-xl p-6">
             <h2 class="text-2xl font-bold mb-6 text-gray-800">
-                <i class="fas fa-history mr-2 text-blue-600"></i>過去のサイン結果（24時間）
+                <i class="fas fa-history mr-2 text-blue-600"></i>直近サイン10回分の結果
             </h2>
             
             <!-- 統計情報 -->
@@ -3382,7 +3382,7 @@ app.get('/signal-history', (c) => {
                 const signals = response.data;
 
                 if (signals.length === 0) {
-                    document.getElementById('signalList').innerHTML = '<p class="text-center text-gray-500 py-8">過去24時間のサインはありません</p>';
+                    document.getElementById('signalList').innerHTML = '<p class="text-center text-gray-500 py-8">直近のサインはありません</p>';
                     return;
                 }
 
@@ -3469,15 +3469,15 @@ app.get('/signal-history', (c) => {
 
 // サイン結果API（勝敗判定付き）
 app.get('/api/signal-history', async (c) => {
-  // 過去24時間のサインを取得（未来のサインは除外）
+  // 直近10回分のサインを取得（未来のサインは除外）
   const now = Math.floor(Date.now() / 1000)
-  const timeLimit = now - (24 * 3600)
   
   const signals = await c.env.DB.prepare(`
     SELECT * FROM gold10_signals
-    WHERE timestamp >= ? AND timestamp <= ?
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
-  `).bind(timeLimit, now).all()
+    LIMIT 10
+  `).bind(now).all()
 
   // 各サインの勝敗を判定
   const signalsWithResult = await Promise.all((signals.results || []).map(async (signal: any) => {
