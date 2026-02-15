@@ -884,10 +884,12 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     })
   }
   
-  // 前回のローソク足を取得
+  // 前回のローソク足を取得（指定タイムスタンプの直前）
   const prevCandle = await c.env.DB.prepare(`
-    SELECT * FROM gold10_candles ORDER BY timestamp DESC LIMIT 1
-  `).first()
+    SELECT * FROM gold10_candles 
+    WHERE timestamp < ?
+    ORDER BY timestamp DESC LIMIT 1
+  `).bind(candleTime).first()
   
   // 初期価格または連続価格
   let basePrice = prevCandle ? prevCandle.close : 4925.0
