@@ -700,9 +700,17 @@ import {
 
 // 過去12時間分のローソク足データを取得
 app.get('/api/gold10/candles', async (c) => {
-  const hoursParam = c.req.query('hours') || '12'
-  const hours = parseInt(hoursParam)
-  const limit = hours * 60  // 1分足なので、時間 × 60本
+  const hoursParam = c.req.query('hours')
+  const limitParam = c.req.query('limit')
+  
+  // limitパラメータが指定されている場合はそれを使用、なければhoursから計算
+  let limit
+  if (limitParam) {
+    limit = parseInt(limitParam)
+  } else {
+    const hours = parseInt(hoursParam || '12')
+    limit = hours * 60  // 1分足なので、時間 × 60本
+  }
   
   // 🔒 現在時刻以前のローソク足のみを取得（未来のローソク足は除外）
   const now = Math.floor(Date.now() / 1000)
@@ -2029,6 +2037,8 @@ app.get('/trade', async (c) => {
         let macdHistogramSeries = null;
         let signalMarkers = [];
         let candlesDataWithRSI = [];  // RSIデータを含むローソク足データを保持
+        let lastCandleTimestamp = 0;  // 最後に追加したローソク足のタイムスタンプ
+        let isChartInitialized = false;  // チャート初期化フラグ
         
         // MACD計算関数
         function calculateMACD(candles, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
@@ -2242,7 +2252,7 @@ app.get('/trade', async (c) => {
             });
         }
 
-        // GOLD10データを読み込んでチャートに表示
+        // GOLD10データを読み込んでチャートに表示（初回のみsetData使用）
         async function loadGold10Chart() {
             try {
                 // 過去12時間分のローソク足データを取得
@@ -2265,9 +2275,12 @@ app.get('/trade', async (c) => {
                     close: c.close
                 }));
 
-                // チャートにデータをセット
-                if (candleData.length > 0) {
+                // 【Lightweight Charts 固定モード】
+                // チャート初期化：setData()は初回のみ1回だけ実行
+                if (candleData.length > 0 && !isChartInitialized) {
                     candlestickSeries.setData(candleData);
+                    isChartInitialized = true;
+                    lastCandleTimestamp = candleData[candleData.length - 1].time;
                     
                     // MACDデータを計算して表示
                     const macdData = calculateMACD(candles);
@@ -2455,31 +2468,54 @@ app.get('/trade', async (c) => {
             }
         }
 
-        // チャートをリアルタイム更新
+        // 【Lightweight Charts 固定モード】
+        // チャートをリアルタイム更新：update()のみ使用、setData()禁止
         async function updateGold10Chart() {
             try {
-                const response = await axios.get('/api/gold10/latest');
-                const { candle, signals } = response.data;
+                // 最新のローソク足データを取得（最後の2本）
+                const response = await axios.get('/api/gold10/candles?limit=2');
+                const candles = response.data;
 
-                if (candle) {
-                    // 最新ローソク足を更新
-                    candlestickSeries.update({
-                        time: candle.timestamp,
-                        open: candle.open,
-                        high: candle.high,
-                        low: candle.low,
-                        close: candle.close
-                    });
+                if (candles && candles.length > 0) {
+                    // タイムスタンプでソート（古い順）
+                    candles.sort((a, b) => a.timestamp - b.timestamp);
+                    
+                    // 各ローソク足を update() で追加/更新
+                    for (const candle of candles) {
+                        // 【重要】新しい足を追加する前に Next_Open = Previous_Close を強制
+                        if (candle.timestamp > lastCandleTimestamp) {
+                            // 新しい足の場合、前の足のCloseを取得
+                            const prevCandle = candlesDataWithRSI[candlesDataWithRSI.length - 1];
+                            if (prevCandle && Math.abs(candle.open - prevCandle.close) > 0.000001) {
+                                // Openを強制的に前足のCloseに修正
+                                candle.open = prevCandle.close;
+                                console.log('[固定モード] Next_Open = Previous_Close を強制: $' + candle.open.toFixed(2));
+                            }
+                            lastCandleTimestamp = candle.timestamp;
+                        }
+                        
+                        // update()でローソク足を追加/更新
+                        candlestickSeries.update({
+                            time: candle.timestamp,
+                            open: candle.open,
+                            high: candle.high,
+                            low: candle.low,
+                            close: candle.close
+                        });
 
-                    // RSIデータを含むローソク足データを更新
-                    const existingIndex = candlesDataWithRSI.findIndex(c => c.timestamp === candle.timestamp);
-                    if (existingIndex >= 0) {
-                        candlesDataWithRSI[existingIndex] = candle;
-                    } else {
-                        candlesDataWithRSI.push(candle);
+                        // RSIデータを含むローソク足データを更新
+                        const existingIndex = candlesDataWithRSI.findIndex(c => c.timestamp === candle.timestamp);
+                        if (existingIndex >= 0) {
+                            candlesDataWithRSI[existingIndex] = candle;
+                        } else {
+                            candlesDataWithRSI.push(candle);
+                        }
                     }
                     
-                    // MACDデータを再計算して更新
+                    // 最新のローソク足を取得
+                    const latestCandle = candles[candles.length - 1];
+                    
+                    // MACDデータを再計算して update() で更新
                     const macdData = calculateMACD(candlesDataWithRSI);
                     const latestMACD = macdData[macdData.length - 1];
                     
@@ -2495,25 +2531,29 @@ app.get('/trade', async (c) => {
 
                     // 現在価格とRSI表示を更新
                     document.getElementById('gold10Price').textContent = 
-                        '$' + candle.close.toFixed(2);
+                        '$' + latestCandle.close.toFixed(2);
                     document.getElementById('gold10RSI').textContent = 
-                        candle.rsi ? candle.rsi.toFixed(1) : '--';
+                        latestCandle.rsi ? latestCandle.rsi.toFixed(1) : '--';
                     
                     // RSI色分け
                     const rsiEl = document.getElementById('gold10RSI');
-                    if (candle.rsi >= 70) {
+                    if (latestCandle.rsi >= 70) {
                         rsiEl.className = 'text-2xl font-bold text-red-600';
-                    } else if (candle.rsi <= 30) {
+                    } else if (latestCandle.rsi <= 30) {
                         rsiEl.className = 'text-2xl font-bold text-green-600';
                     } else {
                         rsiEl.className = 'text-2xl font-bold text-blue-600';
                     }
                     
                     // currentPriceもGOLD10価格に更新
-                    currentPrice = candle.close;
+                    currentPrice = latestCandle.close;
                 }
+                
+                // サインマーカーの更新
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
+                const signals = signalsResponse.data;
 
-                // 新しいサインがあればマーカーを追加＆アラート表示
+                // サインマーカーの更新（update()で追加）
                 if (signals && signals.length > 0) {
                     // 🔒 すべてのサインを保持（削除しない）
                     
