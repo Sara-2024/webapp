@@ -94,6 +94,13 @@ async function addPoints(db: D1Database, userId: number, points: number, type: s
   `).bind(points, userId).run()
 }
 
+// ユーティリティ関数：ユーザーアクティビティ更新
+async function updateUserActivity(db: D1Database, userId: number) {
+  await db.prepare(`
+    UPDATE users SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).bind(userId).run()
+}
+
 // ========== 認証API ==========
 
 // ユーザーログイン
@@ -143,9 +150,16 @@ app.post('/api/auth/login', async (c) => {
 
     await c.env.DB.prepare(`
       UPDATE users 
-      SET last_login_date = ?, consecutive_login_days = ?
+      SET last_login_date = ?, consecutive_login_days = ?, last_activity_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(today, consecutiveDays, user.id).run()
+  } else {
+    // 既にログイン済みでも、最終アクティビティ時刻を更新
+    await c.env.DB.prepare(`
+      UPDATE users 
+      SET last_activity_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(user.id).run()
   }
 
   // セッション設定
@@ -283,6 +297,9 @@ app.post('/api/trade/open', async (c) => {
   if (!userId) {
     return c.json({ error: '未認証' }, 401)
   }
+
+  // ユーザーアクティビティ更新
+  await updateUserActivity(c.env.DB, parseInt(userId))
 
   const { type, amount } = await c.req.json()
   
@@ -1212,6 +1229,23 @@ app.get('/api/ranking/trades', async (c) => {
   `).all()
 
   return c.json(results)
+})
+
+// オンラインユーザー数取得API
+app.get('/api/users/online-count', async (c) => {
+  // 過去5分以内にアクティビティがあったユーザーをオンラインとみなす
+  const { results } = await c.env.DB.prepare(`
+    SELECT COUNT(*) as online_count
+    FROM users
+    WHERE last_activity_at > datetime('now', '-5 minutes')
+  `).all()
+
+  const onlineCount = results && results[0] ? (results[0] as any).online_count : 0
+
+  return c.json({ 
+    online_count: onlineCount,
+    timestamp: new Date().toISOString()
+  })
 })
 
 // ========== 動画教材API ==========
