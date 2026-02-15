@@ -829,6 +829,120 @@ app.post('/api/admin/gold10/save-candle', async (c) => {
   })
 })
 
+// 【新価格生成エンジン】ユーザーエントリー影響を記録
+app.post('/api/gold10/trade-impact', async (c) => {
+  const { type, timestamp } = await c.req.json()
+  
+  if (!type || !timestamp) {
+    return c.json({ error: 'パラメータが不足しています' }, 400)
+  }
+  
+  // トレード影響をメモリに記録（KV使用も可）
+  // direction: BUY=+1, SELL=-1
+  const direction = type === 'BUY' ? 1 : -1
+  const impactStrength = 0.15 // 現在変動幅の15%
+  
+  return c.json({
+    success: true,
+    direction,
+    impactStrength,
+    timestamp
+  })
+})
+
+// 【新価格生成エンジン】次の30秒足を生成
+app.post('/api/gold10/generate-next-candle', async (c) => {
+  const now = Math.floor(Date.now() / 1000)
+  const candleTime = Math.floor(now / 30) * 30 // 30秒境界に揃える
+  
+  // 重複チェック
+  const existing = await c.env.DB.prepare(`
+    SELECT id FROM gold10_candles WHERE timestamp = ?
+  `).bind(candleTime).first()
+  
+  if (existing) {
+    return c.json({ 
+      success: false, 
+      message: 'このタイムスタンプは既に存在します',
+      timestamp: candleTime
+    })
+  }
+  
+  // 前回のローソク足を取得
+  const prevCandle = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles ORDER BY timestamp DESC LIMIT 1
+  `).first()
+  
+  // 初期価格または連続価格
+  let basePrice = prevCandle ? prevCandle.close : 4925.0
+  
+  // 30秒区間の1秒ごと価格を生成（内部計算用）
+  const prices: number[] = []
+  let currentPrice = basePrice
+  
+  // トレンド成分（30秒持続）
+  const trendDirection = Math.random() > 0.5 ? 1 : -1
+  const trendStrength = 0.05 + Math.random() * 0.15 // 0.05-0.2ドル
+  
+  // ボラティリティ（ランダムウォーク）
+  const volatility = 0.02 + Math.random() * 0.08 // 0.02-0.1ドル
+  
+  for (let i = 0; i < 30; i++) {
+    // 市場変動成分（平均回帰）
+    const meanReversion = (4925 - currentPrice) * 0.001 // 中心価格への微弱な引力
+    
+    // トレンド成分
+    const trendComponent = trendDirection * trendStrength / 30
+    
+    // ランダムウォーク成分
+    const randomWalk = (Math.random() - 0.5) * volatility
+    
+    // ユーザー影響成分（仮：簡易実装、後でDB/KVから取得可能）
+    // 実際には直近のトレードを取得して影響を計算
+    const userImpact = 0 // 今回は簡易実装
+    
+    // 次の価格
+    currentPrice = currentPrice + meanReversion + trendComponent + randomWalk + userImpact
+    
+    // 価格範囲制限
+    currentPrice = Math.max(4900, Math.min(4945, currentPrice))
+    
+    prices.push(currentPrice)
+  }
+  
+  // 30秒足の四本値を計算
+  const open = basePrice // Next_Open = Previous_Close
+  const close = prices[prices.length - 1]
+  const high = Math.max(...prices)
+  const low = Math.min(...prices)
+  
+  // DBに保存
+  const insertResult = await c.env.DB.prepare(`
+    INSERT INTO gold10_candles (timestamp, open, high, low, close)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(candleTime, open, high, low, close).run()
+  
+  const candleId = insertResult.meta.last_row_id
+  
+  // RSI計算
+  const recentCandles = await c.env.DB.prepare(`
+    SELECT * FROM gold10_candles ORDER BY timestamp DESC LIMIT 15
+  `).all()
+  
+  const candlesForRSI = recentCandles.results.reverse() as any[]
+  const rsi = calculateRSI(candlesForRSI, 14)
+  
+  await c.env.DB.prepare(`
+    UPDATE gold10_candles SET rsi = ? WHERE id = ?
+  `).bind(rsi, candleId).run()
+  
+  return c.json({
+    success: true,
+    candle: { id: candleId, timestamp: candleTime, open, high, low, close, rsi },
+    message: '30秒足を生成しました'
+  })
+})
+
 
 // 管理者：即座にサイン生成
 app.post('/api/admin/gold10/generate-signal', async (c) => {
@@ -4715,10 +4829,30 @@ app.get('/admin-monitor', (c) => {
             }
         }
 
-        // 30秒足を生成（自然なローソク足ロジック）
+        // 【新価格生成エンジン】30秒足を生成（連続時系列モデル）
         async function generateCandle() {
             try {
-                addLog('30秒足を生成中...', 'info');
+                addLog('30秒足を生成中...（新エンジン）', 'info');
+                
+                // 新しいエンドポイントを使用
+                const response = await axios.post('/api/gold10/generate-next-candle');
+                
+                if (response.data.success) {
+                    successCount++;
+                    document.getElementById('successCount').textContent = successCount + '本';
+                    
+                    const candle = response.data.candle;
+                    const isBullish = candle.close >= candle.open;
+                    const candleType = isBullish ? '陽線↑' : '陰線↓';
+                    const time = new Date(candle.timestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false });
+                    
+                    addLog(\`✅ 30秒足生成成功 - 時刻: \${time}, \${candleType}, O:\${candle.open.toFixed(2)} H:\${candle.high.toFixed(2)} L:\${candle.low.toFixed(2)} C:\${candle.close.toFixed(2)}\`, 'success');
+                    
+                    // 最新情報を更新
+                    await updateLatestCandle();
+                } else {
+                    addLog('スキップ: ' + response.data.message, 'skip');
+                }
                 
                 // 現在時刻を00秒または30秒に整列
                 const now = Math.floor(Date.now() / 1000);
