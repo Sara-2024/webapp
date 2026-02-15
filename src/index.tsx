@@ -862,12 +862,24 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   }
   
   let candleTime
+  const now = Math.floor(Date.now() / 1000)
+  
   if (customTimestamp) {
     // カスタムタイムスタンプ（テスト用）
     candleTime = Math.floor(customTimestamp / 30) * 30 // 30秒境界に揃える
+    
+    // ⚠️ 未来時刻の防止：現在時刻+5分以上先の生成を禁止
+    if (candleTime > now + 300) {
+      return c.json({ 
+        success: false, 
+        message: '未来のタイムスタンプは生成できません（現在時刻+5分以内のみ許可）',
+        timestamp: candleTime,
+        current_time: now,
+        diff_seconds: candleTime - now
+      }, 400)
+    }
   } else {
     // 現在時刻（通常運用）
-    const now = Math.floor(Date.now() / 1000)
     candleTime = Math.floor(now / 30) * 30
   }
   
