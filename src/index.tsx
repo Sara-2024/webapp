@@ -852,8 +852,24 @@ app.post('/api/gold10/trade-impact', async (c) => {
 
 // 【新価格生成エンジン】次の30秒足を生成
 app.post('/api/gold10/generate-next-candle', async (c) => {
-  const now = Math.floor(Date.now() / 1000)
-  const candleTime = Math.floor(now / 30) * 30 // 30秒境界に揃える
+  // リクエストボディから指定タイムスタンプを取得（任意）
+  let customTimestamp = null
+  try {
+    const body = await c.req.json()
+    customTimestamp = body.timestamp
+  } catch (e) {
+    // JSON パースエラー時は無視（ボディなし）
+  }
+  
+  let candleTime
+  if (customTimestamp) {
+    // カスタムタイムスタンプ（テスト用）
+    candleTime = Math.floor(customTimestamp / 30) * 30 // 30秒境界に揃える
+  } else {
+    // 現在時刻（通常運用）
+    const now = Math.floor(Date.now() / 1000)
+    candleTime = Math.floor(now / 30) * 30
+  }
   
   // 重複チェック
   const existing = await c.env.DB.prepare(`
