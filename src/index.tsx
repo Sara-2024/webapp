@@ -2088,6 +2088,13 @@ app.get('/trade', async (c) => {
                 crosshair: {
                     mode: LightweightCharts.CrosshairMode.Normal,
                 },
+                rightPriceScale: {
+                    scaleMargins: {
+                        top: 0.1,    // 上部10%のマージン
+                        bottom: 0.1, // 下部10%のマージン
+                    },
+                    borderVisible: false,
+                },
                 timeScale: {
                     timeVisible: false,
                     secondsVisible: false,
@@ -2291,10 +2298,27 @@ app.get('/trade', async (c) => {
                         to: latestTime
                     });
                     
-                    // 価格軸を自動調整（チャートが切れるのを防ぐ）
-                    chart.priceScale('right').applyOptions({ autoScale: true });
+                    // 価格軸を表示データの範囲に合わせて調整
+                    // autoScaleとfitContentで自動調整（実際のローソク足の価格範囲に合わせる）
+                    chart.priceScale('right').applyOptions({ 
+                        autoScale: true,
+                        scaleMargins: {
+                            top: 0.1,    // 上部10%のマージン
+                            bottom: 0.1, // 下部10%のマージン
+                        },
+                    });
+                    
+                    // 時間軸をデータに合わせる
                     chart.timeScale().fitContent();
-                    macdChart.priceScale('right').applyOptions({ autoScale: true });
+                    
+                    // MACDチャートも同様に調整
+                    macdChart.priceScale('right').applyOptions({ 
+                        autoScale: true,
+                        scaleMargins: {
+                            top: 0.2,
+                            bottom: 0.2,
+                        },
+                    });
                     macdChart.timeScale().fitContent();
                     
                     // 最新価格とRSIを表示
