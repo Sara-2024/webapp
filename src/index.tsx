@@ -2151,6 +2151,10 @@ app.get('/trade', async (c) => {
                         to: latestTime
                     });
                     
+                    // 価格軸を自動調整（チャートが切れるのを防ぐ）
+                    chart.timeScale().fitContent();
+                    macdChart.timeScale().fitContent();
+                    
                     // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
                     if (latestCandle) {
@@ -4636,6 +4640,9 @@ app.get('/admin-monitor', (c) => {
                     to: toTime
                 });
             }
+            
+            // 価格軸を自動調整（チャートが切れるのを防ぐ）
+            adminChart.timeScale().fitContent();
         }
 
         // ログを追加
