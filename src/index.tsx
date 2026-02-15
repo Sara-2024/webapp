@@ -2831,6 +2831,7 @@ app.get('/mypage', (c) => {
                 <ul class="text-sm text-gray-700 space-y-1">
                     <li><i class="fas fa-check text-green-500 mr-2"></i>デイリーログイン: 毎日初回ログインで10ポイント</li>
                     <li><i class="fas fa-check text-green-500 mr-2"></i>7日連続ログイン: 追加で+50ポイントボーナス！</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i>チャット送信: メッセージ1件につき1ポイント</li>
                     <li><i class="fas fa-check text-green-500 mr-2"></i>トレード完了: 1トレードごとに1ポイント（決済から5分以内の連続取引は対象外）</li>
                     <li><i class="fas fa-check text-green-500 mr-2"></i>週次ランキング: 1位10,000pt / 2位5,000pt / 3位1,000pt</li>
                 </ul>
