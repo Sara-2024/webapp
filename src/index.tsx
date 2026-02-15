@@ -762,13 +762,69 @@ app.get('/api/gold10/signals', async (c) => {
 // GETとPOSTの両方をサポート（外部Cronサービスから呼び出し可能）
 // ========== GOLD10 APIエンドポイント（ローソク足関連は管理者モニターのみで生成） ==========
 
-// 管理者：ローソク足を直接保存
-app.post('/api/admin/gold10/save-candle', async (c) => {
-  const adminId = getCookie(c, 'admin_id')
-  if (!adminId) {
-    return c.json({ error: '管理者権限が必要です' }, 403)
+// ティックデータを保存
+app.post('/api/admin/gold10/save-tick', async (c) => {
+  const { timestamp, price } = await c.req.json()
+  
+  if (!timestamp || !price) {
+    return c.json({ error: '必須パラメータが不足しています' }, 400)
   }
 
+  // ティックをDBに保存
+  await c.env.DB.prepare(`
+    INSERT INTO gold10_ticks (timestamp, price)
+    VALUES (?, ?)
+  `).bind(timestamp, price).run()
+
+  return c.json({ success: true })
+})
+
+// 最新のティックを取得
+app.get('/api/gold10/latest-tick', async (c) => {
+  const latestTick = await c.env.DB.prepare(`
+    SELECT * FROM gold10_ticks
+    ORDER BY timestamp DESC
+    LIMIT 1
+  `).first()
+
+  return c.json({ tick: latestTick })
+})
+
+// 指定区間のティックデータを取得
+app.get('/api/gold10/ticks', async (c) => {
+  const start = parseInt(c.req.query('start') || '0')
+  const end = parseInt(c.req.query('end') || '0')
+
+  if (!start || !end) {
+    return c.json({ error: 'start と end パラメータが必要です' }, 400)
+  }
+
+  const ticks = await c.env.DB.prepare(`
+    SELECT * FROM gold10_ticks
+    WHERE timestamp >= ? AND timestamp <= ?
+    ORDER BY timestamp ASC
+  `).bind(start, end).all()
+
+  return c.json({ ticks: ticks.results || [] })
+})
+
+// ローソク足の存在確認
+app.get('/api/gold10/candle-exists', async (c) => {
+  const timestamp = parseInt(c.req.query('timestamp') || '0')
+
+  if (!timestamp) {
+    return c.json({ error: 'timestamp パラメータが必要です' }, 400)
+  }
+
+  const candle = await c.env.DB.prepare(`
+    SELECT id FROM gold10_candles WHERE timestamp = ?
+  `).bind(timestamp).first()
+
+  return c.json({ exists: !!candle })
+})
+
+// 管理者：ローソク足を直接保存（管理者権限チェックなし）
+app.post('/api/admin/gold10/save-candle', async (c) => {
   const { timestamp, open, high, low, close } = await c.req.json()
   
   if (!timestamp || !open || !high || !low || !close) {
@@ -4663,66 +4719,76 @@ app.get('/admin-monitor', (c) => {
             }
         }
 
-        // ローソク足生成を実行（直接DBに保存）
+        // ティックデータを生成（1秒ごとに価格変動）
+        async function generateTick() {
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                
+                // 最新のティックを取得
+                const tickResponse = await axios.get('/api/gold10/latest-tick');
+                const latestTick = tickResponse.data.tick;
+                
+                let newPrice;
+                if (latestTick) {
+                    // 前のティックから±0.1〜0.5ドルの変動
+                    const change = (Math.random() - 0.5) * 1.0;
+                    newPrice = latestTick.price + change;
+                } else {
+                    // 初回生成時
+                    newPrice = 4925;
+                }
+                
+                // 価格範囲制限（4900-4945）
+                newPrice = Math.max(4900, Math.min(4945, newPrice));
+                
+                // ティックをDBに保存
+                await axios.post('/api/admin/gold10/save-tick', {
+                    timestamp: now,
+                    price: newPrice
+                });
+                
+            } catch (error) {
+                console.error('ティック生成エラー:', error);
+            }
+        }
+
+        // 30秒足を生成（ティックデータを集計）
         async function generateCandle() {
             try {
-                addLog('ローソク足生成をリクエスト中...', 'info');
+                addLog('30秒足を生成中...', 'info');
                 
                 // 現在時刻を00秒または30秒に整列
                 const now = Math.floor(Date.now() / 1000);
-                const alignedTimestamp = Math.floor(now / 30) * 30;
+                const candleEndTime = Math.floor(now / 30) * 30;
                 
-                // 最新のローソク足を取得
-                const latestResponse = await axios.get('/api/gold10/candles?hours=1');
-                const candles = latestResponse.data;
-                const latestCandle = candles.length > 0 ? candles[candles.length - 1] : null;
+                // 30秒区間の開始時刻と終了時刻
+                const candleStartTime = candleEndTime - 30;
                 
-                // 既に同じタイムスタンプのローソク足が存在する場合はスキップ
-                if (latestCandle && latestCandle.timestamp === alignedTimestamp) {
+                // この区間のローソク足が既に存在するかチェック
+                const existingResponse = await axios.get(\`/api/gold10/candle-exists?timestamp=\${candleEndTime}\`);
+                if (existingResponse.data.exists) {
                     addLog('スキップ: このタイムスタンプのローソク足は既に存在します', 'skip');
                     return;
                 }
                 
-                // 前のローソク足の時刻チェック
-                if (latestCandle && latestCandle.timestamp + 30 > alignedTimestamp) {
-                    const remaining = (latestCandle.timestamp + 30) - now;
-                    addLog(\`スキップ: 次のローソク足まで\${remaining}秒待機中\`, 'skip');
+                // 30秒区間内のティックデータを取得
+                const ticksResponse = await axios.get(\`/api/gold10/ticks?start=\${candleStartTime}&end=\${candleEndTime - 1}\`);
+                const ticks = ticksResponse.data.ticks;
+                
+                if (ticks.length === 0) {
+                    addLog('スキップ: この区間にティックデータがありません', 'skip');
                     return;
                 }
                 
-                // 新しいローソク足のデータを生成
-                let open, close, high, low;
+                // 【四本値の生成ルール】実際のマーケット仕様
+                const open = ticks[0].price;              // 区間で最初に出現した価格
+                const close = ticks[ticks.length - 1].price; // 区間で最後に出現した価格
+                const high = Math.max(...ticks.map(t => t.price)); // 区間内の最高価格
+                const low = Math.min(...ticks.map(t => t.price));  // 区間内の最安価格
                 
-                if (latestCandle) {
-                    // 前のローソク足の終値を始値とする
-                    open = latestCandle.close;
-                } else {
-                    // 初回生成時
-                    open = 4925;
-                }
-                
-                // トレンド方向をランダムに決定
-                const isUptrend = Math.random() > 0.5;
-                const priceMove = 0.5 + Math.random() * 1.5;
-                
-                if (isUptrend) {
-                    close = open + priceMove * (0.3 + Math.random() * 0.7);
-                    high = Math.max(open, close) + Math.random() * 2;
-                    low = Math.min(open, close) - Math.random() * 1.5;
-                } else {
-                    close = open - priceMove * (0.3 + Math.random() * 0.7);
-                    high = Math.max(open, close) + Math.random() * 1.5;
-                    low = Math.min(open, close) - Math.random() * 2;
-                }
-                
-                // 価格範囲制限（4900-4945）
-                close = Math.max(4900, Math.min(4945, close));
-                high = Math.max(4900, Math.min(4950, high));
-                low = Math.max(4890, Math.min(4950, low));
-                
-                // DBに保存するためのリクエスト
+                // DBに保存
                 const saveResponse = await axios.post('/api/admin/gold10/save-candle', {
-                    timestamp: alignedTimestamp,
+                    timestamp: candleEndTime,
                     open: open,
                     high: high,
                     low: low,
@@ -4733,13 +4799,13 @@ app.get('/admin-monitor', (c) => {
                     successCount++;
                     document.getElementById('successCount').textContent = successCount + '本';
                     
-                    const time = new Date(alignedTimestamp * 1000).toLocaleTimeString('ja-JP', { hour12: false });
-                    addLog(\`✅ ローソク足生成成功 - 時刻: \${time}, 価格: $\${close.toFixed(2)}\`, 'success');
+                    const time = new Date(candleEndTime * 1000).toLocaleTimeString('ja-JP', { hour12: false });
+                    addLog(\`✅ 30秒足生成成功 - 時刻: \${time}, O:\${open.toFixed(2)} H:\${high.toFixed(2)} L:\${low.toFixed(2)} C:\${close.toFixed(2)} (ティック数:\${ticks.length})\`, 'success');
                     
                     // 最新情報を更新
                     await updateLatestCandle();
                 } else {
-                    addLog('スキップ: ' + saveResponse.data.message, 'skip');
+                    addLog('エラー: ' + saveResponse.data.message, 'error');
                 }
             } catch (error) {
                 console.error('ローソク足生成エラー:', error);
@@ -4772,7 +4838,7 @@ app.get('/admin-monitor', (c) => {
         async function startAutoGeneration() {
             // 初回実行
             addLog('自動生成タイマーを開始しました', 'success');
-            addLog('⏰ 毎分00秒と30秒にローソク足を生成します', 'info');
+            addLog('⏰ 実際のマーケット仕様：1秒ごとにティック生成、30秒ごとに足を確定', 'info');
             await updateLatestCandle();
 
             // 次回実行時刻を計算（00秒または30秒）
@@ -4782,7 +4848,12 @@ app.get('/admin-monitor', (c) => {
                 return nextBoundary;
             }
             
-            // 次の00秒または30秒まで待機してから実行
+            // ティックを1秒ごとに生成
+            setInterval(async () => {
+                await generateTick();
+            }, 1000);
+            
+            // 次の00秒または30秒まで待機してから30秒足を生成
             function scheduleNextGeneration() {
                 const now = Date.now();
                 const currentSeconds = Math.floor(now / 1000);
