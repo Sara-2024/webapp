@@ -4611,6 +4611,10 @@ app.get('/admin-monitor', (c) => {
                 <div id="status" class="text-2xl font-bold status-running">
                     <i class="fas fa-circle text-green-500 mr-2"></i>稼働中
                 </div>
+                <!-- 停止/再開ボタン -->
+                <button id="toggleButton" onclick="toggleGeneration()" class="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+                    <i class="fas fa-pause mr-2"></i>一時停止
+                </button>
             </div>
 
             <!-- 次回実行まで -->
@@ -4974,6 +4978,12 @@ app.get('/admin-monitor', (c) => {
             }
         }
 
+        // 自動生成の状態管理
+        let isGenerationRunning = true;
+        let generationTimer = null;
+        let reservationTimer = null;
+        let countdownTimer = null;
+
         async function startAutoGeneration() {
             // 初回実行
             addLog('自動生成タイマーを開始しました', 'success');
@@ -4989,13 +4999,17 @@ app.get('/admin-monitor', (c) => {
             
             // 次の00秒または30秒まで待機してから30秒足を生成
             function scheduleNextGeneration() {
+                if (!isGenerationRunning) return; // 停止中は実行しない
+                
                 const now = Date.now();
                 const currentSeconds = Math.floor(now / 1000);
                 const nextBoundary = Math.ceil(currentSeconds / 30) * 30;
                 const msUntilNext = (nextBoundary * 1000) - now;
                 
-                setTimeout(async () => {
-                    await generateCandle();
+                generationTimer = setTimeout(async () => {
+                    if (isGenerationRunning) {
+                        await generateCandle();
+                    }
                     // 次の30秒後に再スケジュール
                     scheduleNextGeneration();
                 }, msUntilNext);
@@ -5005,15 +5019,51 @@ app.get('/admin-monitor', (c) => {
             scheduleNextGeneration();
 
             // 予約サインを1分ごとにチェック
-            setInterval(checkReservations, 60000);
+            reservationTimer = setInterval(() => {
+                if (isGenerationRunning) {
+                    checkReservations();
+                }
+            }, 60000);
             // 初回チェック
             await checkReservations();
 
             // カウントダウンを1秒ごとに更新
-            setInterval(updateCountdown, 1000);
+            countdownTimer = setInterval(updateCountdown, 1000);
             
             // 次回実行時刻を初期化
             nextExecutionTime = calculateNextExecution();
+        }
+
+        // 停止/再開機能
+        function toggleGeneration() {
+            isGenerationRunning = !isGenerationRunning;
+            
+            const statusDiv = document.getElementById('status');
+            const toggleButton = document.getElementById('toggleButton');
+            
+            if (isGenerationRunning) {
+                // 再開
+                statusDiv.innerHTML = '<i class="fas fa-circle text-green-500 mr-2"></i>稼働中';
+                statusDiv.classList.add('status-running');
+                toggleButton.innerHTML = '<i class="fas fa-pause mr-2"></i>一時停止';
+                toggleButton.className = 'mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors';
+                addLog('🔄 自動生成を再開しました', 'success');
+                
+                // タイマーを再スタート
+                startAutoGeneration();
+            } else {
+                // 停止
+                statusDiv.innerHTML = '<i class="fas fa-circle text-red-500 mr-2"></i>停止中';
+                statusDiv.classList.remove('status-running');
+                toggleButton.innerHTML = '<i class="fas fa-play mr-2"></i>再開';
+                toggleButton.className = 'mt-4 px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors';
+                addLog('⏸️ 自動生成を一時停止しました', 'warning');
+                
+                // タイマーをクリア
+                if (generationTimer) clearTimeout(generationTimer);
+                if (reservationTimer) clearInterval(reservationTimer);
+                if (countdownTimer) clearInterval(countdownTimer);
+            }
         }
 
         // ページ読み込み時に開始
