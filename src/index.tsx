@@ -2265,8 +2265,21 @@ app.get('/trade', (c) => {
                         
                         // 最新のサインでアラート表示（初回ロード時は表示しない）
                         if (lastSignalCount > 0) {
-                            const latestSignal = signals[signals.length - 1];
-                            showSignalAlert(latestSignal);
+                            // 🔒 修正: newMarkersに対応するsignalを正しく取得
+                            const latestNewMarker = newMarkers[newMarkers.length - 1];
+                            const latestSignal = signals.find(s => s.timestamp === latestNewMarker.time);
+                            
+                            // デバッグログ
+                            console.log('新しいサイン検出:', {
+                                newMarkersCount: newMarkers.length,
+                                latestNewMarker,
+                                latestSignal,
+                                signalType: latestSignal?.type
+                            });
+                            
+                            if (latestSignal) {
+                                showSignalAlert(latestSignal);
+                            }
                         }
                         lastSignalCount = signals.length;
                         
