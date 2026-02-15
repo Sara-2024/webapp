@@ -80,19 +80,19 @@ export function generateCandle(previousCandle: Candle | null, basePrice: number 
   const now = currentTime !== undefined ? currentTime : Math.floor(Date.now() / 1000)
   
   if (previousCandle) {
-    // 前のローソク足のタイムスタンプ + 30秒（30秒足）
-    const nextTimestamp = previousCandle.timestamp + 30
+    // 前のローソク足のタイムスタンプ + 1秒（1秒足）
+    const nextTimestamp = previousCandle.timestamp + 1
     
     // 🔒 次のタイムスタンプが現在時刻を大きく超えている場合は現在時刻を使用
-    if (nextTimestamp > now + 60) {
-      // 異常な未来の時刻になる場合は、現在時刻を30秒単位に丸めて使用
-      timestamp = Math.floor(now / 30) * 30
+    if (nextTimestamp > now + 10) {
+      // 異常な未来の時刻になる場合は、現在時刻を1秒単位に丸めて使用
+      timestamp = Math.floor(now)
     } else {
       timestamp = nextTimestamp
     }
   } else {
-    // 初回生成時は現在時刻を30秒単位に丸める
-    timestamp = Math.floor(now / 30) * 30
+    // 初回生成時は現在時刻を1秒単位に丸める
+    timestamp = Math.floor(now)
   }
 
   let open: number

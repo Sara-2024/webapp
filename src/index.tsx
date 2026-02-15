@@ -4545,6 +4545,15 @@ app.get('/admin-monitor', (c) => {
             </div>
         </div>
 
+        <!-- チャート表示 -->
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">
+                <i class="fas fa-chart-line mr-2 text-yellow-400"></i>
+                リアルタイムチャート
+            </h2>
+            <div id="adminChartContainer" style="width: 100%; height: 400px;"></div>
+        </div>
+
         <!-- 最新ローソク足情報 -->
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-6">
             <h2 class="text-xl font-bold mb-4">
@@ -4592,10 +4601,77 @@ app.get('/admin-monitor', (c) => {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script>
         let successCount = 0;
         let nextExecutionTime = 0;
         const logs = [];
+        let adminChart = null;
+        let adminCandlestickSeries = null;
+        let allCandles = [];
+
+        // チャート初期化
+        function initializeAdminChart() {
+            const chartContainer = document.getElementById('adminChartContainer');
+            adminChart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: 400,
+                layout: {
+                    background: { color: '#1f2937' },
+                    textColor: '#d1d5db'
+                },
+                grid: {
+                    vertLines: { color: '#374151' },
+                    horzLines: { color: '#374151' }
+                },
+                timeScale: {
+                    borderColor: '#4b5563',
+                    timeVisible: true,
+                    secondsVisible: true
+                },
+                rightPriceScale: {
+                    borderColor: '#4b5563'
+                }
+            });
+
+            adminCandlestickSeries = adminChart.addCandlestickSeries({
+                upColor: '#10b981',
+                downColor: '#ef4444',
+                borderVisible: false,
+                wickUpColor: '#10b981',
+                wickDownColor: '#ef4444'
+            });
+
+            // ウィンドウリサイズ対応
+            window.addEventListener('resize', () => {
+                adminChart.resize(chartContainer.clientWidth, 400);
+            });
+        }
+
+        // チャートデータ更新
+        function updateAdminChart(candles) {
+            if (!adminCandlestickSeries || candles.length === 0) return;
+            
+            const chartData = candles.map(c => ({
+                time: c.timestamp,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close
+            }));
+
+            adminCandlestickSeries.setData(chartData);
+            
+            // 最新60本（1分間）を表示
+            if (chartData.length > 60) {
+                const fromTime = chartData[chartData.length - 60].time;
+                const toTime = chartData[chartData.length - 1].time;
+                adminChart.timeScale().setVisibleRange({
+                    from: fromTime,
+                    to: toTime
+                });
+            }
+        }
 
         // ログを追加
         function addLog(message, type = 'info') {
@@ -4643,6 +4719,7 @@ app.get('/admin-monitor', (c) => {
             try {
                 const response = await axios.get('/api/gold10/candles?hours=1');
                 const candles = response.data;
+                allCandles = candles;
                 
                 if (candles.length > 0) {
                     const latest = candles[candles.length - 1];
@@ -4652,6 +4729,9 @@ app.get('/admin-monitor', (c) => {
                     document.getElementById('latestPrice').textContent = '$' + latest.close.toFixed(2);
                     document.getElementById('latestRSI').textContent = latest.rsi ? latest.rsi.toFixed(1) : '--';
                     document.getElementById('totalCandles').textContent = candles.length + '本';
+                    
+                    // チャート更新
+                    updateAdminChart(candles);
                 }
             } catch (error) {
                 console.error('ローソク足情報取得エラー:', error);
@@ -4716,18 +4796,18 @@ app.get('/admin-monitor', (c) => {
             addLog('自動生成タイマーを開始しました', 'success');
             await updateLatestCandle();
 
-            // 次回実行時刻を計算（30秒境界）
+            // 次回実行時刻を計算（1秒境界）
             function calculateNextExecution() {
                 const now = Math.floor(Date.now() / 1000);
-                const nextBoundary = Math.floor(now / 30) * 30 + 30;
+                const nextBoundary = now + 1;
                 return nextBoundary;
             }
 
-            // 30秒ごとに実行
+            // 1秒ごとに実行
             setInterval(async () => {
                 nextExecutionTime = calculateNextExecution();
                 await generateCandle();
-            }, 30000);
+            }, 1000);
 
             // 予約サインを1分ごとにチェック
             setInterval(checkReservations, 60000);
@@ -4744,6 +4824,7 @@ app.get('/admin-monitor', (c) => {
         // ページ読み込み時に開始
         window.addEventListener('load', () => {
             addLog('モニターページを初期化しています...', 'info');
+            initializeAdminChart();
             startAutoGeneration();
         });
 
