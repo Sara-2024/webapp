@@ -2283,20 +2283,28 @@ app.get('/trade', (c) => {
                         
                         // 最新のサインでアラート表示（初回ロード時は表示しない）
                         if (lastSignalCount > 0) {
-                            // 🔒 修正: newMarkersに対応するsignalを正しく取得
-                            const latestNewMarker = newMarkers[newMarkers.length - 1];
+                            // 🔒 修正: タイムスタンプが最大のマーカーを取得
+                            const latestNewMarker = newMarkers.reduce((latest, marker) => 
+                                marker.time > latest.time ? marker : latest
+                            , newMarkers[0]);
+                            
+                            // タイムスタンプで一致するサインを検索
                             const latestSignal = signals.find(s => s.timestamp === latestNewMarker.time);
                             
-                            // デバッグログ
+                            // デバッグログ（詳細）
                             console.log('新しいサイン検出:', {
                                 newMarkersCount: newMarkers.length,
-                                latestNewMarker,
-                                latestSignal,
-                                signalType: latestSignal?.type
+                                allNewMarkers: newMarkers.map(m => ({ time: m.time, text: m.text })),
+                                latestNewMarker: { time: latestNewMarker.time, text: latestNewMarker.text },
+                                latestSignal: latestSignal,
+                                signalType: latestSignal?.type,
+                                allSignals: signals.map(s => ({ timestamp: s.timestamp, type: s.type }))
                             });
                             
                             if (latestSignal) {
                                 showSignalAlert(latestSignal);
+                            } else {
+                                console.error('サインが見つかりません:', latestNewMarker);
                             }
                         }
                         lastSignalCount = signals.length;
