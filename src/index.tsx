@@ -1587,6 +1587,7 @@ app.get('/trade', (c) => {
             <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/signal-history" class="hover:text-yellow-200"><i class="fas fa-history mr-1"></i>サイン結果</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
@@ -1601,6 +1602,7 @@ app.get('/trade', (c) => {
         <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
             <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
             <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/signal-history" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-history mr-2"></i>サイン結果</a>
             <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
             <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
             <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
@@ -2254,17 +2256,12 @@ app.get('/trade', (c) => {
 
                 // 新しいサインがあればマーカーを追加＆アラート表示
                 if (signals && signals.length > 0) {
-                    // 🔒 表示範囲内のサインのみを保持（左端にサインが溜まらないように）
-                    const currentTime = candle ? candle.timestamp : Date.now() / 1000;
-                    const displayStartTime = currentTime - (120 * 30); // 120本 × 30秒 = 1時間
-                    
-                    // 古いマーカーを削除（表示範囲外）
-                    signalMarkers = signalMarkers.filter(m => m.time >= displayStartTime);
+                    // 🔒 すべてのサインを保持（削除しない）
                     
                     // 既存のマーカーと新しいマーカーをマージ（重複を避ける）
                     const existingTimestamps = new Set(signalMarkers.map(m => m.time));
                     const newMarkers = signals
-                        .filter(signal => signal.timestamp >= displayStartTime) // 表示範囲内のみ
+                        .filter(signal => !existingTimestamps.has(signal.timestamp))
                         .filter(signal => !existingTimestamps.has(signal.timestamp))
                         .map(signal => ({
                             time: signal.timestamp,
@@ -2759,6 +2756,7 @@ app.get('/mypage', (c) => {
             <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/signal-history" class="hover:text-yellow-200"><i class="fas fa-history mr-1"></i>サイン結果</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
@@ -2773,6 +2771,7 @@ app.get('/mypage', (c) => {
         <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
             <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
             <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/signal-history" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-history mr-2"></i>サイン結果</a>
             <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
             <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
             <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
@@ -2958,6 +2957,7 @@ app.get('/ranking', (c) => {
             <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/signal-history" class="hover:text-yellow-200"><i class="fas fa-history mr-1"></i>サイン結果</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
@@ -2972,6 +2972,7 @@ app.get('/ranking', (c) => {
         <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
             <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
             <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/signal-history" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-history mr-2"></i>サイン結果</a>
             <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
             <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
             <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
@@ -3170,6 +3171,7 @@ app.get('/videos', (c) => {
             <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/signal-history" class="hover:text-yellow-200"><i class="fas fa-history mr-1"></i>サイン結果</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
@@ -3184,6 +3186,7 @@ app.get('/videos', (c) => {
         <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
             <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
             <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/signal-history" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-history mr-2"></i>サイン結果</a>
             <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
             <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
             <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
@@ -3268,6 +3271,231 @@ app.get('/videos', (c) => {
   `)
 })
 
+// サイン結果ページ
+app.get('/signal-history', (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.redirect('/')
+  }
+
+  return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>過去のサイン結果 - GOLD10</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-gray-900 to-gray-800 min-h-screen">
+    <!-- ヘッダー -->
+    <div class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-xl font-bold"><i class="fas fa-chart-line mr-2"></i>GOLD10</h1>
+            <nav class="hidden md:flex space-x-4 items-center text-sm">
+                <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
+                <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/signal-history" class="hover:text-yellow-200"><i class="fas fa-history mr-1"></i>サイン結果</a>
+                <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
+                <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
+                <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
+                <button onclick="logout()" class="hover:text-yellow-200"><i class="fas fa-sign-out-alt mr-1"></i>ログアウト</button>
+            </nav>
+            <button onclick="toggleMobileMenu()" class="md:hidden text-white"><i class="fas fa-bars text-xl"></i></button>
+        </div>
+        <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2 container mx-auto px-4 pb-3">
+            <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
+            <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/signal-history" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-history mr-2"></i>サイン結果</a>
+            <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
+            <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
+            <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
+            <button onclick="logout()" class="block w-full text-left py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-sign-out-alt mr-2"></i>ログアウト</button>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-xl p-6">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800">
+                <i class="fas fa-history mr-2 text-blue-600"></i>過去のサイン結果（24時間）
+            </h2>
+            
+            <!-- 統計情報 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-blue-50 rounded-lg p-4 text-center">
+                    <div class="text-sm text-gray-600">総サイン数</div>
+                    <div id="totalSignals" class="text-3xl font-bold text-blue-600">0</div>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4 text-center">
+                    <div class="text-sm text-gray-600">勝利数</div>
+                    <div id="winCount" class="text-3xl font-bold text-green-600">0</div>
+                </div>
+                <div class="bg-red-50 rounded-lg p-4 text-center">
+                    <div class="text-sm text-gray-600">敗北数</div>
+                    <div id="lossCount" class="text-3xl font-bold text-red-600">0</div>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                    <div class="text-sm text-gray-600">勝率</div>
+                    <div id="winRate" class="text-3xl font-bold text-yellow-600">0%</div>
+                </div>
+            </div>
+
+            <!-- サイン一覧 -->
+            <div id="signalList" class="space-y-3">
+                <p class="text-center text-gray-500 py-8">読み込み中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileMenu');
+            menu.classList.toggle('hidden');
+        }
+
+        function logout() {
+            document.cookie = 'user_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            window.location.href = '/';
+        }
+
+        async function loadSignalHistory() {
+            try {
+                const response = await axios.get('/api/signal-history');
+                const signals = response.data;
+
+                if (signals.length === 0) {
+                    document.getElementById('signalList').innerHTML = '<p class="text-center text-gray-500 py-8">過去24時間のサインはありません</p>';
+                    return;
+                }
+
+                // 統計を計算
+                let winCount = 0;
+                let lossCount = 0;
+                let pendingCount = 0;
+
+                signals.forEach(signal => {
+                    if (signal.result === 'win') winCount++;
+                    else if (signal.result === 'loss') lossCount++;
+                    else pendingCount++;
+                });
+
+                const totalSignals = signals.length;
+                const winRate = totalSignals > 0 ? ((winCount / (winCount + lossCount)) * 100).toFixed(1) : 0;
+
+                document.getElementById('totalSignals').textContent = totalSignals;
+                document.getElementById('winCount').textContent = winCount;
+                document.getElementById('lossCount').textContent = lossCount;
+                document.getElementById('winRate').textContent = winRate + '%';
+
+                // サイン一覧を表示
+                const signalList = document.getElementById('signalList');
+                signalList.innerHTML = signals.map(signal => {
+                    const time = new Date(signal.timestamp * 1000).toLocaleString('ja-JP', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+
+                    const typeColor = signal.type === 'BUY' ? 'text-green-600' : 'text-red-600';
+                    const typeIcon = signal.type === 'BUY' ? 'fa-arrow-up' : 'fa-arrow-down';
+                    const typeText = signal.type === 'BUY' ? '買いサイン' : '売りサイン';
+
+                    let resultBadge = '';
+                    if (signal.result === 'win') {
+                        resultBadge = '<span class="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold"><i class="fas fa-check mr-1"></i>勝利</span>';
+                    } else if (signal.result === 'loss') {
+                        resultBadge = '<span class="bg-red-500 text-white px-3 py-1 rounded-full text-sm font-bold"><i class="fas fa-times mr-1"></i>敗北</span>';
+                    } else {
+                        resultBadge = '<span class="bg-gray-400 text-white px-3 py-1 rounded-full text-sm font-bold"><i class="fas fa-clock mr-1"></i>判定待ち</span>';
+                    }
+
+                    return \`
+                        <div class="bg-gray-50 rounded-lg p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i class="fas \${typeIcon} \${typeColor} text-xl"></i>
+                                    <span class="font-bold \${typeColor}">\${typeText}</span>
+                                    <span class="text-gray-500 text-sm">\${time}</span>
+                                </div>
+                                <div class="text-sm text-gray-600">
+                                    <span class="font-bold">点灯価格:</span> $\${signal.price.toFixed(2)}
+                                    \${signal.targetPrice ? \` → <span class="font-bold">5本後価格:</span> $\${signal.targetPrice.toFixed(2)}\` : ''}
+                                    \${signal.targetPrice ? \` <span class="\${signal.result === 'win' ? 'text-green-600' : 'text-red-600'} font-bold">(\${signal.type === 'BUY' ? (signal.targetPrice > signal.price ? '+' : '') : (signal.targetPrice < signal.price ? '-' : '+')}$\${Math.abs(signal.targetPrice - signal.price).toFixed(2)})</span>\` : ''}
+                                </div>
+                            </div>
+                            <div>
+                                \${resultBadge}
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+
+            } catch (error) {
+                console.error('サイン履歴取得エラー:', error);
+                document.getElementById('signalList').innerHTML = '<p class="text-center text-red-500 py-8">データの取得に失敗しました</p>';
+            }
+        }
+
+        // ページ読み込み時にデータを取得
+        window.addEventListener('load', loadSignalHistory);
+
+        // 30秒ごとに自動更新
+        setInterval(loadSignalHistory, 30000);
+    </script>
+</body>
+</html>
+  `)
+})
+
+// サイン結果API（勝敗判定付き）
+app.get('/api/signal-history', async (c) => {
+  // 過去24時間のサインを取得
+  const timeLimit = Math.floor(Date.now() / 1000) - (24 * 3600)
+  
+  const signals = await c.env.DB.prepare(`
+    SELECT * FROM gold10_signals
+    WHERE timestamp >= ?
+    ORDER BY timestamp DESC
+  `).bind(timeLimit).all()
+
+  // 各サインの勝敗を判定
+  const signalsWithResult = await Promise.all((signals.results || []).map(async (signal: any) => {
+    // サイン点灯時刻から5本後（5 * 30秒 = 150秒後）のローソク足を取得
+    const targetTime = signal.timestamp + 150
+    
+    const targetCandle = await c.env.DB.prepare(`
+      SELECT close FROM gold10_candles
+      WHERE timestamp >= ?
+      ORDER BY timestamp ASC
+      LIMIT 1
+    `).bind(targetTime).first() as { close: number } | null
+
+    let result = 'pending' // 'win', 'loss', 'pending'
+    
+    if (targetCandle) {
+      if (signal.type === 'BUY') {
+        // 買いサイン：5本後の価格がサイン価格より上がっていれば勝ち
+        result = targetCandle.close > signal.price ? 'win' : 'loss'
+      } else {
+        // 売りサイン：5本後の価格がサイン価格より下がっていれば勝ち
+        result = targetCandle.close < signal.price ? 'win' : 'loss'
+      }
+    }
+
+    return {
+      ...signal,
+      result,
+      targetPrice: targetCandle?.close
+    }
+  }))
+
+  return c.json(signalsWithResult)
+})
+
 // チャットページ
 app.get('/chat', (c) => {
   return c.html(`
@@ -3288,6 +3516,7 @@ app.get('/chat', (c) => {
             <nav class="hidden md:flex space-x-4">
                 <a href="/trade" class="hover:text-yellow-200"><i class="fas fa-chart-line mr-1"></i>トレード</a>
                 <a href="/mypage" class="hover:text-yellow-200"><i class="fas fa-user mr-1"></i>マイページ</a>
+                <a href="/signal-history" class="hover:text-yellow-200"><i class="fas fa-history mr-1"></i>サイン結果</a>
                 <a href="/ranking" class="hover:text-yellow-200"><i class="fas fa-trophy mr-1"></i>ランキング</a>
                 <a href="/videos" class="hover:text-yellow-200"><i class="fas fa-video mr-1"></i>動画教材</a>
                 <a href="/chat" class="hover:text-yellow-200"><i class="fas fa-comments mr-1"></i>チャット</a>
@@ -3302,6 +3531,7 @@ app.get('/chat', (c) => {
         <div id="mobileMenu" class="hidden md:hidden mt-3 space-y-2">
             <a href="/trade" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-chart-line mr-2"></i>トレード</a>
             <a href="/mypage" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-user mr-2"></i>マイページ</a>
+            <a href="/signal-history" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-history mr-2"></i>サイン結果</a>
             <a href="/ranking" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-trophy mr-2"></i>ランキング</a>
             <a href="/videos" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-video mr-2"></i>動画教材</a>
             <a href="/chat" class="block py-2 hover:bg-yellow-700 rounded px-2"><i class="fas fa-comments mr-2"></i>チャット</a>
