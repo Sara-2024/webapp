@@ -1564,6 +1564,89 @@ app.get('/admin-login', (c) => {
 
 // トレード画面
 app.get('/trade', (c) => {
+  // メンテナンスモード
+  const maintenanceMode = true; // メンテナンス終了後はfalseに変更
+  
+  if (maintenanceMode) {
+    return c.html(`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>メンテナンス中 - GOLD LABO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .pulse-animation {
+            animation: pulse 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen flex items-center justify-center">
+    <div class="container mx-auto px-4">
+        <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-2xl p-8 md:p-12 text-center">
+            <!-- メンテナンスアイコン -->
+            <div class="pulse-animation mb-8">
+                <i class="fas fa-tools text-8xl text-yellow-500"></i>
+            </div>
+            
+            <!-- タイトル -->
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-6">
+                メンテナンス中です
+            </h1>
+            
+            <!-- メッセージ -->
+            <div class="mb-8">
+                <p class="text-xl text-gray-600 mb-4">
+                    しばらくお待ちください。
+                </p>
+                <div class="bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded-lg">
+                    <p class="text-lg font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-clock mr-2 text-yellow-500"></i>
+                        再開目安
+                    </p>
+                    <p class="text-3xl font-bold text-yellow-600">
+                        23時頃
+                    </p>
+                </div>
+            </div>
+            
+            <!-- 詳細メッセージ -->
+            <div class="text-gray-600 text-sm space-y-2">
+                <p>現在、システムの改善作業を行っております。</p>
+                <p>ご不便をおかけして申し訳ございません。</p>
+                <p class="text-gray-500 mt-4">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    自動でページが更新されます
+                </p>
+            </div>
+            
+            <!-- 戻るボタン -->
+            <div class="mt-8">
+                <a href="/" class="inline-block bg-gradient-to-r from-yellow-600 to-yellow-500 text-white px-8 py-3 rounded-lg font-bold hover:from-yellow-700 hover:to-yellow-600 transition-all transform hover:scale-105">
+                    <i class="fas fa-home mr-2"></i>
+                    トップページに戻る
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 30秒ごとにページをリロード（メンテナンス終了後に自動で通常画面に戻る）
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
+    </script>
+</body>
+</html>
+    `);
+  }
+  
   return c.html(`
 <!DOCTYPE html>
 <html lang="ja">
