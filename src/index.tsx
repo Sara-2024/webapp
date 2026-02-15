@@ -687,11 +687,14 @@ app.get('/api/gold10/candles', async (c) => {
   const hours = parseInt(hoursParam)
   const limit = hours * 60  // 1分足なので、時間 × 60本
   
+  // 🔒 現在時刻以前のローソク足のみを取得（未来のローソク足は除外）
+  const now = Math.floor(Date.now() / 1000)
   const candles = await c.env.DB.prepare(`
     SELECT * FROM gold10_candles
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT ?
-  `).bind(limit).all()
+  `).bind(now, limit).all()
 
   // 新しい順→古い順に並び替え
   const sortedCandles = candles.results.reverse()
@@ -701,17 +704,21 @@ app.get('/api/gold10/candles', async (c) => {
 
 // 最新のローソク足データを取得
 app.get('/api/gold10/latest', async (c) => {
+  // 🔒 現在時刻以前の最新ローソク足のみを取得
+  const now = Math.floor(Date.now() / 1000)
   const latestCandle = await c.env.DB.prepare(`
     SELECT * FROM gold10_candles
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT 1
-  `).first()
+  `).bind(now).first()
 
   const latestSignals = await c.env.DB.prepare(`
     SELECT * FROM gold10_signals
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT 10
-  `).all()
+  `).bind(now).all()
 
   return c.json({
     candle: latestCandle,
@@ -737,34 +744,37 @@ app.get('/api/gold10/signals', async (c) => {
 // 新しいローソク足とサインを生成（管理用エンドポイント - 本番では定期実行）
 // GETとPOSTの両方をサポート（外部Cronサービスから呼び出し可能）
 const generateCandleHandler = async (c: any) => {
-  // 最新のローソク足を取得
+  // 現在時刻を取得
+  const now = Math.floor(Date.now() / 1000)
+  
+  // 🔒 重要: 現在時刻以前の最新ローソク足のみを取得（未来のローソク足は無視）
   const latestCandle = await c.env.DB.prepare(`
     SELECT * FROM gold10_candles
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT 1
-  `).first() as Candle | null
+  `).bind(now).first() as Candle | null
 
-  // 最新のサインを取得
+  // 最新のサインを取得（現在時刻以前のみ）
   const latestSignal = await c.env.DB.prepare(`
     SELECT * FROM gold10_signals
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT 1
-  `).first() as Signal | null
+  `).bind(now).first() as Signal | null
 
   // タイムスタンプの検証: 最新ローソク足が現在時刻から大きく離れている場合はリセット
-  const now = Math.floor(Date.now() / 1000)
   let candleToUse = latestCandle
   
   if (latestCandle) {
-    // 🔒 最新ローソク足が未来の場合は異常なので拒否
+    // 念のため再度チェック（通常はクエリで除外済み）
     if (latestCandle.timestamp > now + 60) {
-      return c.json({ 
-        error: '最新ローソク足が未来の時刻です。外部Cronのクロックを確認してください。',
-        skip: true,
+      console.warn('未来のローソク足を検出（本来はクエリで除外済み）:', {
         latestCandleTime: latestCandle.timestamp,
         currentTime: now,
         timeDiff: latestCandle.timestamp - now
-      }, 400)
+      })
+      candleToUse = null  // 未来のローソク足は無視して新規生成
     }
     
     // 次のローソク足の時刻（30秒後）
@@ -3459,14 +3469,15 @@ app.get('/signal-history', (c) => {
 
 // サイン結果API（勝敗判定付き）
 app.get('/api/signal-history', async (c) => {
-  // 過去24時間のサインを取得
-  const timeLimit = Math.floor(Date.now() / 1000) - (24 * 3600)
+  // 過去24時間のサインを取得（未来のサインは除外）
+  const now = Math.floor(Date.now() / 1000)
+  const timeLimit = now - (24 * 3600)
   
   const signals = await c.env.DB.prepare(`
     SELECT * FROM gold10_signals
-    WHERE timestamp >= ?
+    WHERE timestamp >= ? AND timestamp <= ?
     ORDER BY timestamp DESC
-  `).bind(timeLimit).all()
+  `).bind(timeLimit, now).all()
 
   // 各サインの勝敗を判定
   const signalsWithResult = await Promise.all((signals.results || []).map(async (signal: any) => {
