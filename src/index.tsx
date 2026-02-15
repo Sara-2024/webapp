@@ -2676,24 +2676,30 @@ app.get('/trade', (c) => {
         })();
         
         // GOLD10チャートを30秒ごとに更新（新しいローソク足とサイン生成）
-        setInterval(async () => {
-            // サーバー側で新しいローソク足を生成
-            const response = await axios.post('/api/gold10/generate').catch(err => {
-                console.log('ローソク足生成:', err.response?.status === 500 ? 'スキップ' : err.message);
-                return null;
-            });
-            
-            // スキップされた場合はチャートだけ更新（ローソク足は生成しない）
-            if (response?.data?.skip) {
-                console.log('ローソク足生成スキップ:', response.data.message);
-                // チャートのみ更新（既存データの表示）
+        // ランダムな遅延（0-5秒）を追加して、複数ユーザーの同時アクセスを分散
+        const randomDelay = Math.floor(Math.random() * 5000); // 0-5秒のランダム遅延
+        
+        setTimeout(() => {
+            // 30秒ごとにローソク足を生成
+            setInterval(async () => {
+                // サーバー側で新しいローソク足を生成
+                const response = await axios.post('/api/gold10/generate').catch(err => {
+                    console.log('ローソク足生成:', err.response?.status === 500 ? 'スキップ' : err.message);
+                    return null;
+                });
+                
+                // スキップされた場合はチャートだけ更新（ローソク足は生成しない）
+                if (response?.data?.skip) {
+                    console.log('ローソク足生成スキップ:', response.data.message);
+                    // チャートのみ更新（既存データの表示）
+                    await updateGold10Chart();
+                    return;
+                }
+                
+                // チャートを更新
                 await updateGold10Chart();
-                return;
-            }
-            
-            // チャートを更新
-            await updateGold10Chart();
-        }, 30000);  // 30秒ごと（30秒足）
+            }, 30000);  // 30秒ごと（30秒足）
+        }, randomDelay);  // 初回実行を0-5秒遅延
 
         // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
         setInterval(async () => {
