@@ -4735,9 +4735,19 @@ app.get('/admin-monitor', (c) => {
                     open = 4925;
                 }
                 
-                // 価格変動を生成（±0.5〜2.0ドル）
-                const volatility = 0.5 + Math.random() * 1.5;
-                const direction = Math.random() > 0.5 ? 1 : -1;
+                // 価格変動を生成（±0.1〜0.5ドル）- より自然な動きに
+                const volatility = 0.1 + Math.random() * 0.4;
+                
+                // トレンド継続の確率（70%で前の動きを継承）
+                let direction;
+                if (latestCandle && candles.length >= 2) {
+                    const prevCandle = candles[candles.length - 2];
+                    const prevDirection = latestCandle.close > prevCandle.close ? 1 : -1;
+                    direction = Math.random() > 0.3 ? prevDirection : -prevDirection;
+                } else {
+                    direction = Math.random() > 0.5 ? 1 : -1;
+                }
+                
                 const priceChange = direction * volatility;
                 
                 // Close を計算（範囲制限: 4900-4945）
@@ -4748,16 +4758,16 @@ app.get('/admin-monitor', (c) => {
                 
                 if (isBullish) {
                     // 陽線: Open < Close
-                    // High = Close + 上ヒゲ（0〜1.5ドル）
-                    high = close + Math.random() * 1.5;
-                    // Low = Open - 下ヒゲ（0〜1.0ドル）
-                    low = open - Math.random() * 1.0;
+                    // High = Close + 上ヒゲ（0〜0.3ドル）- より小さなヒゲに
+                    high = close + Math.random() * 0.3;
+                    // Low = Open - 下ヒゲ（0〜0.2ドル）
+                    low = open - Math.random() * 0.2;
                 } else {
                     // 陰線: Open > Close
-                    // High = Open + 上ヒゲ（0〜1.5ドル）
-                    high = open + Math.random() * 1.5;
-                    // Low = Close - 下ヒゲ（0〜1.0ドル）
-                    low = close - Math.random() * 1.0;
+                    // High = Open + 上ヒゲ（0〜0.3ドル）
+                    high = open + Math.random() * 0.3;
+                    // Low = Close - 下ヒゲ（0〜0.2ドル）
+                    low = close - Math.random() * 0.2;
                 }
                 
                 // High/Low の範囲制限（4890-4950）
