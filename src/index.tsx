@@ -2825,14 +2825,22 @@ app.get('/trade', async (c) => {
                 const signalsResponse = await axios.get('/api/gold10/signals?hours=24');
                 const signals = signalsResponse.data;
                 
-                console.log('[User] サイン取得:', signals.length, '件');
+                console.log('[User] サイン取得:', signals.length, '件', signals);
+                console.log('[User] ローソク足データ数:', candlesDataWithRSI.length);
                 
                 // 表示中のローソク足のタイムスタンプセット作成
                 const candleTimestamps = new Set(candlesDataWithRSI.map(c => c.timestamp));
+                console.log('[User] ローソク足タイムスタンプ:', Array.from(candleTimestamps));
                 
                 // マーカー作成
                 const markers = signals
-                    .filter(signal => candleTimestamps.has(signal.timestamp))
+                    .filter(signal => {
+                        const match = candleTimestamps.has(signal.timestamp);
+                        if (!match) {
+                            console.log('[User] サイン除外（ローソク足なし）:', signal.timestamp, signal.type);
+                        }
+                        return match;
+                    })
                     .map(signal => ({
                         time: signal.timestamp,
                         position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
@@ -2841,11 +2849,14 @@ app.get('/trade', async (c) => {
                         text: signal.type === 'BUY' ? '買い' : '売り'
                     }));
                 
-                console.log('[User] マーカー表示:', markers.length, '件');
+                console.log('[User] マーカー表示:', markers.length, '件', markers);
                 
                 // マーカーをチャートに設定
                 if (candlestickSeries) {
                     candlestickSeries.setMarkers(markers);
+                    console.log('[User] マーカー設定完了');
+                } else {
+                    console.error('[User] candlestickSeriesが未初期化');
                 }
             } catch (error) {
                 console.error('[User] サインマーカー読み込みエラー:', error);
@@ -5046,14 +5057,22 @@ app.get('/admin', (c) => {
                 const signalsResponse = await axios.get('/api/gold10/signals?hours=24');
                 const signals = signalsResponse.data;
                 
-                console.log('[Admin] サイン取得:', signals.length, '件');
+                console.log('[Admin] サイン取得:', signals.length, '件', signals);
+                console.log('[Admin] ローソク足データ数:', candles.length);
                 
                 // ローソク足のタイムスタンプセット作成
                 const candleTimestamps = new Set(candles.map(c => c.timestamp));
+                console.log('[Admin] ローソク足タイムスタンプ範囲:', Math.min(...candleTimestamps), 'to', Math.max(...candleTimestamps));
                 
                 // マーカー作成
                 const markers = signals
-                    .filter(signal => candleTimestamps.has(signal.timestamp))
+                    .filter(signal => {
+                        const match = candleTimestamps.has(signal.timestamp);
+                        if (!match) {
+                            console.log('[Admin] サイン除外（ローソク足なし）:', signal.timestamp, signal.type);
+                        }
+                        return match;
+                    })
                     .map(signal => ({
                         time: signal.timestamp,
                         position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
@@ -5062,11 +5081,14 @@ app.get('/admin', (c) => {
                         text: signal.type === 'BUY' ? '買い' : '売り'
                     }));
                 
-                console.log('[Admin] マーカー表示:', markers.length, '件');
+                console.log('[Admin] マーカー表示:', markers.length, '件', markers);
                 
                 // マーカーをチャートに設定
                 if (adminCandlestickSeries) {
                     adminCandlestickSeries.setMarkers(markers);
+                    console.log('[Admin] マーカー設定完了');
+                } else {
+                    console.error('[Admin] adminCandlestickSeriesが未初期化');
                 }
             } catch (error) {
                 console.error('[Admin] サインマーカー読み込みエラー:', error);
