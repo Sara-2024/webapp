@@ -311,6 +311,8 @@ app.post('/api/trade/open', async (c) => {
   // フォールバック：価格が送られてこない場合はDBから取得
   let entryPrice = price
   
+  console.log('[Server] Entry request:', { type, amount, price, hasPrice: !!price })
+  
   if (!entryPrice) {
     const latestCandle = await c.env.DB.prepare(`
       SELECT close FROM gold10_candles
@@ -318,12 +320,15 @@ app.post('/api/trade/open', async (c) => {
       LIMIT 1
     `).first()
     entryPrice = latestCandle ? latestCandle.close as number : 5000
+    console.log('[Server] Using fallback price from DB:', entryPrice)
   }
 
   const result = await c.env.DB.prepare(`
     INSERT INTO trades (user_id, type, amount, entry_price, status)
     VALUES (?, ?, ?, ?, 'OPEN')
   `).bind(userId, type, amount, entryPrice).run()
+  
+  console.log('[Server] Trade created:', { tradeId: result.meta.last_row_id, entryPrice })
 
   return c.json({
     success: true,
@@ -363,12 +368,14 @@ app.post('/api/trade/close/:tradeId', async (c) => {
   const amount = trade.amount as number
   const type = trade.type as string
 
-  // 損益計算（GOLD10の場合、1ozあたりの価格差）
+  // 損益計算（GOLD10の場合）
+  // 1ロット = 100オンス、USD/JPY = 152.96
+  // 価格差1ドル × 100オンス × 152.96円/ドル = 15,296円
   let profitLoss = 0
   if (type === 'BUY') {
-    profitLoss = (exitPrice - entryPrice) * amount * 152.96 // USD/JPY換算
+    profitLoss = (exitPrice - entryPrice) * amount * 100 * 152.96
   } else {
-    profitLoss = (entryPrice - exitPrice) * amount * 152.96
+    profitLoss = (entryPrice - exitPrice) * amount * 100 * 152.96
   }
 
   const exitTime = new Date().toISOString()
@@ -823,7 +830,22 @@ app.get('/api/gold10/candles/latest', async (c) => {
   // Calculate countdown
   const now = Math.floor(Date.now() / 1000)
   const latestCandle = candles.results[0]
-  const nextCandleTime = latestCandle ? latestCandle.timestamp + 30 : now + 30
+  
+  // 次のローソク足の時刻を計算（30秒刻み）
+  let nextCandleTime
+  if (latestCandle) {
+    // 最新ローソク足から30秒後
+    nextCandleTime = latestCandle.timestamp + 30
+    
+    // もし次の時刻が過去の場合、現在時刻を30秒単位に切り上げ
+    if (nextCandleTime <= now) {
+      nextCandleTime = Math.ceil(now / 30) * 30
+    }
+  } else {
+    // ローソク足がない場合、現在時刻を30秒単位に切り上げ
+    nextCandleTime = Math.ceil(now / 30) * 30
+  }
+  
   const secondsUntilNext = Math.max(0, nextCandleTime - now)
 
   return c.json({
@@ -2937,9 +2959,10 @@ app.get('/trade', async (c) => {
             }
 
             container.innerHTML = openPositions.map(pos => {
+                // 1ロット = 100オンス
                 const pl = pos.type === 'BUY' 
-                    ? (currentPrice - pos.entry_price) * pos.amount * 152.96
-                    : (pos.entry_price - currentPrice) * pos.amount * 152.96;
+                    ? (currentPrice - pos.entry_price) * pos.amount * 100 * 152.96
+                    : (pos.entry_price - currentPrice) * pos.amount * 100 * 152.96;
                 const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
                 const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300';
                 
@@ -2989,18 +3012,28 @@ app.get('/trade', async (c) => {
             const amount = 1; // 1ロット固定
 
             try {
+                // 現在価格をコンソールに出力
+                console.log('[Trade] エントリー時の価格:', {
+                    currentPrice: currentPrice,
+                    timestamp: new Date().toISOString()
+                });
+                
                 // 現在価格をサーバーに送信
                 const response = await axios.post('/api/trade/open', { 
                     type, 
                     amount,
                     price: currentPrice  // フロントエンドの表示価格を送信
                 });
+                
+                console.log('[Trade] サーバーレスポンス:', response.data);
+                
                 await loadOpenPositions();
                 await loadUserData();
                 
                 const typeName = type === 'BUY' ? '買い' : '売り';
                 showNotification('entry', 'エントリーしました！', \`\${typeName}ポジション \${amount} lot を開きました\`);
             } catch (error) {
+                console.error('[Trade] エントリーエラー:', error);
                 alert('エラー: ' + (error.response?.data?.error || '取引に失敗しました'));
             }
         }
