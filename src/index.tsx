@@ -2330,9 +2330,10 @@ app.get('/trade', async (c) => {
                 // RSIデータを含むローソク足データを保存
                 candlesDataWithRSI = candles;
 
-                // サインデータを取得
-                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
-                const signals = signalsResponse.data;
+                // 【サイン表示を無効化】サインデータ取得をコメントアウト
+                // const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
+                // const signals = signalsResponse.data;
+                const signals = []; // 空配列に設定してサイン表示を完全無効化
 
                 // ローソク足データをLightweight Charts形式に変換
                 const candleData = candles.map(c => ({
