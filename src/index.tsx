@@ -3084,10 +3084,10 @@ app.get('/trade', async (c) => {
             }
 
             container.innerHTML = openPositions.map(pos => {
-                // 1ロット = 100オンス
+                // 1ロット = 10オンス（利益率1/10に調整）
                 const pl = pos.type === 'BUY' 
-                    ? (currentPrice - pos.entry_price) * pos.amount * 100 * 152.96
-                    : (pos.entry_price - currentPrice) * pos.amount * 100 * 152.96;
+                    ? (currentPrice - pos.entry_price) * pos.amount * 10 * 152.96
+                    : (pos.entry_price - currentPrice) * pos.amount * 10 * 152.96;
                 const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
                 const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300';
                 
