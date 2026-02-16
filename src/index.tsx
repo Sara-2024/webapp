@@ -870,9 +870,9 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   const minVolatilityPercent = 0.001  // 0.1%
   const minVolatility = open * minVolatilityPercent
   
-  // ボラティリティ設定（0.5% ～ 2.0%）
+  // ボラティリティ設定（0.3% ～ 0.8%）
   const trendDirection = Math.random() > 0.5 ? 1 : -1
-  const volatilityPercent = 0.005 + Math.random() * 0.015  // 0.5% ~ 2.0%
+  const volatilityPercent = 0.003 + Math.random() * 0.005  // 0.3% ~ 0.8%
   const volatility = open * volatilityPercent
 
   const prices = []
@@ -1970,16 +1970,7 @@ app.get('/', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gradient-to-br from-gray-900 to-gray-800 min-h-screen flex items-center justify-center p-4">
-    <!-- メンテナンス予告バナー -->
-    <div class="fixed top-0 left-0 right-0 bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg z-50">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <div class="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8 mt-16">
         <div class="text-center mb-8">
             <i class="fas fa-chart-line text-6xl text-yellow-500 mb-4"></i>
@@ -2064,16 +2055,7 @@ app.get('/admin-login', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gradient-to-br from-gray-900 to-gray-800 min-h-screen flex items-center justify-center p-4">
-    <!-- メンテナンス予告バナー -->
-    <div class="fixed top-0 left-0 right-0 bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg z-50">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <div class="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8 mt-16">
         <div class="text-center mb-8">
             <i class="fas fa-user-shield text-6xl text-red-500 mb-4"></i>
@@ -2301,16 +2283,7 @@ app.get('/trade', async (c) => {
     </style>
 </head>
 <body class="bg-gray-100 overflow-hidden">
-    <!-- メンテナンス予告バナー -->
-    <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <!-- ヘッダー -->
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
@@ -3595,16 +3568,7 @@ app.get('/mypage', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <!-- メンテナンス予告バナー -->
-    <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-user mr-1 sm:mr-2"></i>マイページ</h1>
@@ -3965,16 +3929,7 @@ app.get('/ranking', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <!-- メンテナンス予告バナー -->
-    <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-trophy mr-1 sm:mr-2"></i>ランキング</h1>
@@ -4192,16 +4147,7 @@ app.get('/videos', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <!-- メンテナンス予告バナー -->
-    <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-video mr-1 sm:mr-2"></i>動画教材</h1>
@@ -4548,16 +4494,7 @@ app.get('/chat', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
-    <!-- メンテナンス予告バナー -->
-    <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white py-3 px-4 text-center shadow-lg">
-        <div class="container mx-auto flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
-            <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
-            </span>
-        </div>
-    </div>
-    
+
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-comments mr-1 sm:mr-2"></i>オンラインチャット</h1>
