@@ -2623,11 +2623,6 @@ app.get('/trade', async (c) => {
                 // RSIデータを含むローソク足データを保存
                 candlesDataWithRSI = candles;
 
-                // 【サイン表示を無効化】サインデータ取得をコメントアウト
-                // const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
-                // const signals = signalsResponse.data;
-                const signals = []; // 空配列に設定してサイン表示を完全無効化
-
                 // ローソク足データをLightweight Charts形式に変換
                 const candleData = candles.map(c => ({
                     time: c.timestamp,
@@ -2717,24 +2712,8 @@ app.get('/trade', async (c) => {
                     }
                 }
 
-                // サインをマーカーとして表示（表示範囲内のみ）
-                if (signals.length > 0 && candleData.length > 0) {
-                    // 🔒 表示範囲の開始時刻を取得（最新100本）
-                    const displayStartTime = candleData[Math.max(0, candleData.length - 100)].time;
-                    
-                    // 表示範囲内のサインのみフィルタリング（左端にサインが溜まらないように）
-                    const visibleSignals = signals.filter(signal => signal.timestamp >= displayStartTime);
-                    
-                    const markers = visibleSignals.map(signal => ({
-                        time: signal.timestamp,
-                        position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
-                        color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
-                        shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
-                        text: signal.type === 'BUY' ? '買サイン' : '売サイン',
-                    }));
-                    candlestickSeries.setMarkers(markers);
-                    signalMarkers = markers;
-                }
+                // サインマーカーを読み込んで表示
+                await loadUserSignals();
 
             } catch (error) {
                 console.error('チャートデータ取得エラー:', error);
@@ -2839,6 +2818,41 @@ app.get('/trade', async (c) => {
 
         // 【Lightweight Charts 固定モード】
         // チャートをリアルタイム更新：update()のみ使用、setData()禁止
+        // ユーザー側のサインマーカー読み込み
+        async function loadUserSignals() {
+            try {
+                // 最新24時間のサインを取得
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=24');
+                const signals = signalsResponse.data;
+                
+                console.log('[User] サイン取得:', signals.length, '件');
+                
+                // 表示中のローソク足のタイムスタンプセット作成
+                const candleTimestamps = new Set(candlesDataWithRSI.map(c => c.timestamp));
+                
+                // マーカー作成
+                const markers = signals
+                    .filter(signal => candleTimestamps.has(signal.timestamp))
+                    .map(signal => ({
+                        time: signal.timestamp,
+                        position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
+                        color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
+                        shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
+                        text: signal.type === 'BUY' ? '買い' : '売り'
+                    }));
+                
+                console.log('[User] マーカー表示:', markers.length, '件');
+                
+                // マーカーをチャートに設定
+                if (candlestickSeries) {
+                    candlestickSeries.setMarkers(markers);
+                }
+            } catch (error) {
+                console.error('[User] サインマーカー読み込みエラー:', error);
+            }
+        }
+        
+        // GOLD10チャート更新
         async function updateGold10Chart() {
             try {
                 // 最新のローソク足データを取得（最後の2本）
@@ -2918,75 +2932,8 @@ app.get('/trade', async (c) => {
                     currentPrice = latestCandle.close;
                 }
                 
-                // 【サイン表示を無効化】
-                // フロントエンド自動生成モードでは、サインはDBに保存されないため
-                // サインマーカーの表示を一時的に無効化します
-                // 
-                // サインマーカーの更新（コメントアウト）
-                /*
-                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
-                const signals = signalsResponse.data;
-
-                // サインマーカーの更新（update()で追加）
-                if (signals && signals.length > 0) {
-                    // 🔒 すべてのサインを保持（削除しない）
-                    
-                    // 既存のマーカーと新しいマーカーをマージ（重複を避ける）
-                    const existingTimestamps = new Set(signalMarkers.map(m => m.time));
-                    const newMarkers = signals
-                        .filter(signal => !existingTimestamps.has(signal.timestamp))
-                        .filter(signal => !existingTimestamps.has(signal.timestamp))
-                        .map(signal => ({
-                            time: signal.timestamp,
-                            position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
-                            color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
-                            shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
-                            text: signal.type === 'BUY' ? '買サイン' : '売サイン',
-                        }));
-                    
-                    // 新しいマーカーがあれば追加＆アラート表示
-                    if (newMarkers.length > 0) {
-                        signalMarkers = [...signalMarkers, ...newMarkers];
-                        // タイムスタンプ順にソート
-                        signalMarkers.sort((a, b) => a.time - b.time);
-                        candlestickSeries.setMarkers(signalMarkers);
-                        
-                        // 最新のサインでアラート表示（初回ロード時は表示しない）
-                        if (lastSignalCount > 0) {
-                            // 🔒 修正: タイムスタンプが最大のマーカーを取得
-                            const latestNewMarker = newMarkers.reduce((latest, marker) => 
-                                marker.time > latest.time ? marker : latest
-                            , newMarkers[0]);
-                            
-                            // タイムスタンプで一致するサインを検索
-                            const latestSignal = signals.find(s => s.timestamp === latestNewMarker.time);
-                            
-                            // デバッグログ（詳細）
-                            console.log('新しいサイン検出:', {
-                                newMarkersCount: newMarkers.length,
-                                allNewMarkers: newMarkers.map(m => ({ time: m.time, text: m.text })),
-                                latestNewMarker: { time: latestNewMarker.time, text: latestNewMarker.text },
-                                latestSignal: latestSignal,
-                                signalType: latestSignal?.type,
-                                allSignals: signals.map(s => ({ timestamp: s.timestamp, type: s.type }))
-                            });
-                            
-                            if (latestSignal) {
-                                showSignalAlert(latestSignal);
-                            } else {
-                                console.error('サインが見つかりません:', latestNewMarker);
-                            }
-                        }
-                        lastSignalCount = signals.length;
-                        
-                        // 次回サイン予定時刻を更新
-                        updateNextSignalTime();
-                    } else {
-                        // 新しいサインはないが、古いサインを削除した場合はマーカーを更新
-                        candlestickSeries.setMarkers(signalMarkers);
-                    }
-                }
-                */
+                // サインマーカーを取得して表示
+                await loadUserSignals();
 
             } catch (error) {
                 console.error('チャート更新エラー:', error);
@@ -3831,6 +3778,9 @@ app.get('/ranking', (c) => {
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
+        // axiosのデフォルト設定: Cookieを常に送信
+        axios.defaults.withCredentials = true;
+        
         function showTab(tab) {
             if (tab === 'profit') {
                 document.getElementById('profitRanking').classList.remove('hidden');
@@ -4822,6 +4772,9 @@ app.get('/admin', (c) => {
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
+        // axiosのデフォルト設定: Cookieを常に送信
+        axios.defaults.withCredentials = true;
+        
         function showTab(tab) {
             // パネルの表示切り替え
             document.getElementById('chartPanel').classList.add('hidden');
@@ -4978,6 +4931,9 @@ app.get('/admin', (c) => {
                 document.getElementById('adminRSI').textContent = latest.rsi ? latest.rsi.toFixed(1) : '--';
                 document.getElementById('adminTotalCandles').textContent = candles.length + '本';
                 
+                // サインマーカーを取得して表示
+                await loadAdminSignals(candles);
+                
                 // 5秒ごとに更新
                 setInterval(updateAdminChart, 5000);
                 
@@ -5033,6 +4989,9 @@ app.get('/admin', (c) => {
                     window.__lastAdminCandleTime = latest.timestamp;
                 }
                 
+                // サインマーカーも更新（5秒ごと）
+                await loadAdminSignals(data.candles);
+                
             } catch (error) {
                 console.error('[Admin] チャート更新エラー:', error);
             }
@@ -5079,6 +5038,40 @@ app.get('/admin', (c) => {
                 histogram: i >= signalPeriod - 1 ? macdLine[i] - signalLine[i - signalPeriod + 1] : macdLine[i]
             }));
         }
+        
+        // 管理画面のサインマーカー読み込み
+        async function loadAdminSignals(candles) {
+            try {
+                // 最新100本分のサインを取得
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=24');
+                const signals = signalsResponse.data;
+                
+                console.log('[Admin] サイン取得:', signals.length, '件');
+                
+                // ローソク足のタイムスタンプセット作成
+                const candleTimestamps = new Set(candles.map(c => c.timestamp));
+                
+                // マーカー作成
+                const markers = signals
+                    .filter(signal => candleTimestamps.has(signal.timestamp))
+                    .map(signal => ({
+                        time: signal.timestamp,
+                        position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
+                        color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
+                        shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
+                        text: signal.type === 'BUY' ? '買い' : '売り'
+                    }));
+                
+                console.log('[Admin] マーカー表示:', markers.length, '件');
+                
+                // マーカーをチャートに設定
+                if (adminCandlestickSeries) {
+                    adminCandlestickSeries.setMarkers(markers);
+                }
+            } catch (error) {
+                console.error('[Admin] サインマーカー読み込みエラー:', error);
+            }
+        }
 
         // 即座にサイン生成
         async function generateSignalNow(type) {
@@ -5090,6 +5083,10 @@ app.get('/admin', (c) => {
                 const response = await axios.post('/api/admin/gold10/generate-signal', { type });
                 alert(response.data.message);
                 loadSystemInfo(); // 統計を更新
+                
+                // チャートにサインマーカーを即座に反映
+                const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
+                await loadAdminSignals(candlesResponse.data);
             } catch (error) {
                 console.error('サイン生成エラー:', error);
                 if (error.response?.status === 403) {
