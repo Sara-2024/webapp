@@ -1564,6 +1564,67 @@ app.get('/api/admin/users', async (c) => {
   return c.json(results)
 })
 
+// サイン生成API（管理者専用）
+app.post('/api/admin/gold10/generate-signal', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const { type } = await c.req.json()
+  
+  if (type !== 'BUY' && type !== 'SELL') {
+    return c.json({ error: 'typeは"BUY"または"SELL"である必要があります' }, 400)
+  }
+
+  // 現在時刻を30秒境界に丸める
+  const now = Math.floor(Date.now() / 1000)
+  const candleTimestamp = Math.floor(now / 30) * 30
+
+  // 現在価格を取得
+  const latestCandle = await c.env.DB.prepare(`
+    SELECT close FROM gold10_candles 
+    WHERE timestamp <= ?
+    ORDER BY timestamp DESC 
+    LIMIT 1
+  `).bind(now).first()
+
+  const price = latestCandle?.close || 5000
+
+  // サインを挿入
+  const result = await c.env.DB.prepare(`
+    INSERT INTO gold10_signals (type, candle_timestamp, price, is_active)
+    VALUES (?, ?, ?, 1)
+  `).bind(type, candleTimestamp, price).run()
+
+  console.log(`[Signal Generated] ${type} at ${candleTimestamp}, price: ${price}`)
+
+  return c.json({
+    success: true,
+    message: `${type === 'BUY' ? '買い' : '売り'}サインを生成しました`,
+    signal: {
+      id: result.meta.last_row_id,
+      type,
+      candleTimestamp,
+      price
+    }
+  })
+})
+
+// サイン一覧取得API
+app.get('/api/gold10/signals', async (c) => {
+  const hours = parseInt(c.req.query('hours') || '24')
+  const cutoffTime = Math.floor(Date.now() / 1000) - (hours * 3600)
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT * FROM gold10_signals
+    WHERE candle_timestamp >= ? AND is_active = 1
+    ORDER BY candle_timestamp DESC
+  `).bind(cutoffTime).all()
+
+  return c.json(results)
+})
+
 // ユーザー追加
 app.post('/api/admin/users', async (c) => {
   const adminId = getCookie(c, 'admin_id')
@@ -2644,20 +2705,16 @@ app.get('/trade', async (c) => {
                     }
                 }
 
-                // 【サイン表示を無効化】
-                // フロントエンド自動生成モードでは、サインはDBに保存されないため
-                // 初期ロード時のサインマーカー表示も無効化します
-                /*
                 // サインをマーカーとして表示（表示範囲内のみ）
                 if (signals.length > 0 && candleData.length > 0) {
                     // 🔒 表示範囲の開始時刻を取得（最新100本）
                     const displayStartTime = candleData[Math.max(0, candleData.length - 100)].time;
                     
                     // 表示範囲内のサインのみフィルタリング（左端にサインが溜まらないように）
-                    const visibleSignals = signals.filter(signal => signal.timestamp >= displayStartTime);
+                    const visibleSignals = signals.filter(signal => signal.candle_timestamp >= displayStartTime);
                     
                     const markers = visibleSignals.map(signal => ({
-                        time: signal.timestamp,
+                        time: signal.candle_timestamp,
                         position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
                         color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
                         shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
@@ -2666,7 +2723,6 @@ app.get('/trade', async (c) => {
                     candlestickSeries.setMarkers(markers);
                     signalMarkers = markers;
                 }
-                */
 
             } catch (error) {
                 console.error('チャートデータ取得エラー:', error);
@@ -4798,17 +4854,17 @@ app.get('/admin', (c) => {
         // システム情報を読み込み
         async function loadSystemInfo() {
             try {
-                // 【サイン機能完全無効化】サイン情報の取得を無効化
-                // const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
-                // const signals = signalsResponse.data;
+                // サイン情報を取得
+                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
+                const signals = signalsResponse.data;
                 
                 // ローソク足情報を取得
                 const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
                 const candles = candlesResponse.data;
                 document.getElementById('totalCandles').textContent = candles.length + '本';
                 
-                // サイン数（サイン機能無効化のため0固定）
-                document.getElementById('totalSignals').textContent = '0本';
+                // サイン数を表示
+                document.getElementById('totalSignals').textContent = signals.length + '本';
                 
                 // 現在価格
                 if (candles.length > 0) {
@@ -5012,12 +5068,8 @@ app.get('/admin', (c) => {
             }));
         }
 
-        // 即座にサイン生成【サイン機能完全無効化】
+        // 即座にサイン生成
         async function generateSignalNow(type) {
-            alert('サイン生成機能は現在無効化されています');
-            return;
-            
-            /* 【サイン機能完全無効化】
             if (!confirm(\`\${type === 'BUY' ? '買い' : '売り'}サインを生成しますか？\`)) {
                 return;
             }
@@ -5035,7 +5087,6 @@ app.get('/admin', (c) => {
                     alert('サイン生成に失敗しました: ' + (error.response?.data?.error || error.message));
                 }
             }
-            */
         }
 
         // サイン予約【サイン機能完全無効化】

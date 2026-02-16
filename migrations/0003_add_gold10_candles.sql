@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS gold10_candles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp INTEGER NOT NULL UNIQUE,
+  open REAL NOT NULL,
+  high REAL NOT NULL,
+  low REAL NOT NULL,
+  close REAL NOT NULL,
+  rsi REAL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_gold10_candles_timestamp ON gold10_candles(timestamp);
