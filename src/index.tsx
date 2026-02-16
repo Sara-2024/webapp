@@ -2617,7 +2617,12 @@ app.get('/trade', async (c) => {
                     currentPrice = latestCandle.close;
                 }
                 
-                // サインマーカーの更新
+                // 【サイン表示を無効化】
+                // フロントエンド自動生成モードでは、サインはDBに保存されないため
+                // サインマーカーの表示を一時的に無効化します
+                // 
+                // サインマーカーの更新（コメントアウト）
+                /*
                 const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
                 const signals = signalsResponse.data;
 
@@ -2680,6 +2685,7 @@ app.get('/trade', async (c) => {
                         candlestickSeries.setMarkers(signalMarkers);
                     }
                 }
+                */
 
             } catch (error) {
                 console.error('チャート更新エラー:', error);
