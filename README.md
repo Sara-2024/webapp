@@ -3,6 +3,8 @@
 ## プロジェクト概要
 - **名称**: GOLD取引デモプラットフォーム
 - **目的**: GOLDのデモ取引を通じてFX取引の練習ができるWebアプリケーション
+- **アクティブユーザー数**: 105名（1回以上取引経験）
+- **総取引数**: 3,475回
 - **価格データ**: Twelve Data API（XAU/USD）からリアルタイム取得
 - **TradingView連動チャート**: 
   - **最推奨**: [FX_IDC:XAUUSDG](https://www.tradingview.com/chart/?symbol=FX_IDC%3AXAUUSDG) - Gold/USD Gram単位、$4,900-$5,100範囲
@@ -170,6 +172,10 @@ wrangler pages secret put TWELVE_DATA_API_KEY --project-name webapp
    - リアルタイムメッセージング（5秒ごと更新）
    - ユーザー名・タイムスタンプ表示
    - 自分のメッセージを右側に表示
+   - **メンション機能**（実装予定）
+     - `@ユーザー名` でメンション
+     - オートコンプリート機能
+     - メンション先ユーザーにハイライト表示
 
 ### ✅ 管理者機能
 1. **管理者ログイン**（`/admin-login`）
