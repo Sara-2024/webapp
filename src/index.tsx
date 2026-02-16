@@ -1197,10 +1197,17 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
     return c.json({ error: 'サインタイプが不正です' }, 400)
   }
 
-  // 最新のローソク足を取得
+  // 現在時刻に最も近いローソク足を確実に生成
+  await generateCandleIfNeeded(c.env.DB)
+
+  // 現在時刻以前の最新のローソク足を取得
+  const now = Math.floor(Date.now() / 1000)
   const latestCandle = await c.env.DB.prepare(`
-    SELECT * FROM gold10_candles ORDER BY timestamp DESC LIMIT 1
-  `).first()
+    SELECT * FROM gold10_candles 
+    WHERE timestamp <= ?
+    ORDER BY timestamp DESC 
+    LIMIT 1
+  `).bind(now).first()
 
   if (!latestCandle) {
     return c.json({ error: 'ローソク足データがありません' }, 400)
