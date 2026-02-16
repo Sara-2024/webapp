@@ -222,6 +222,92 @@ app.get('/api/auth/me', async (c) => {
   return c.json(user)
 })
 
+// 特別ボーナス受け取り状況確認API
+app.get('/api/special-bonus/status', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const bonusType = 'maintenance_2026_02_16'
+  
+  // 受け取り済みかチェック
+  const claim = await c.env.DB.prepare(`
+    SELECT * FROM special_bonus_claims 
+    WHERE user_id = ? AND bonus_type = ?
+  `).bind(userId, bonusType).first()
+
+  // キャンペーン終了時刻（日本時間 2026-02-17 15:00 JST = UTC 2026-02-17 06:00）
+  const campaignEndTime = new Date('2026-02-17T06:00:00Z').getTime()
+  const now = Date.now()
+  const isExpired = now > campaignEndTime
+
+  return c.json({
+    claimed: !!claim,
+    claimedAt: claim?.claimed_at || null,
+    points: claim?.points || 0,
+    isExpired,
+    remainingTimeMs: isExpired ? 0 : campaignEndTime - now
+  })
+})
+
+// 特別ボーナス受け取りAPI
+app.post('/api/special-bonus/claim', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const bonusType = 'maintenance_2026_02_16'
+  const bonusPoints = 1000
+
+  // キャンペーン期限チェック（日本時間 2026-02-17 15:00 JST = UTC 2026-02-17 06:00）
+  const campaignEndTime = new Date('2026-02-17T06:00:00Z').getTime()
+  const now = Date.now()
+  
+  if (now > campaignEndTime) {
+    return c.json({ error: 'キャンペーン期間が終了しました' }, 400)
+  }
+
+  // 既に受け取り済みかチェック
+  const existingClaim = await c.env.DB.prepare(`
+    SELECT * FROM special_bonus_claims 
+    WHERE user_id = ? AND bonus_type = ?
+  `).bind(userId, bonusType).first()
+
+  if (existingClaim) {
+    return c.json({ error: '既に受け取り済みです' }, 400)
+  }
+
+  try {
+    // トランザクション: ポイント付与 + 受け取り記録
+    await c.env.DB.batch([
+      c.env.DB.prepare(`
+        UPDATE users SET points = points + ? WHERE id = ?
+      `).bind(bonusPoints, userId),
+      c.env.DB.prepare(`
+        INSERT INTO special_bonus_claims (user_id, bonus_type, points)
+        VALUES (?, ?, ?)
+      `).bind(userId, bonusType, bonusPoints)
+    ])
+
+    // 更新後のユーザー情報を取得
+    const user = await c.env.DB.prepare(`
+      SELECT points FROM users WHERE id = ?
+    `).bind(userId).first()
+
+    return c.json({
+      success: true,
+      pointsReceived: bonusPoints,
+      newBalance: user.points,
+      message: `${bonusPoints}ポイントを受け取りました！`
+    })
+  } catch (error) {
+    console.error('特別ボーナス受け取りエラー:', error)
+    return c.json({ error: 'ポイント付与に失敗しました' }, 500)
+  }
+})
+
 // ========== トレードAPI ==========
 
 // 現在の金価格取得
@@ -3536,6 +3622,81 @@ app.get('/mypage', (c) => {
             </div>
         </div>
 
+        <!-- 特別ボーナス（24時間限定） -->
+        <div id="specialBonusSection" class="bg-gradient-to-br from-pink-50 to-red-50 rounded-lg shadow-md p-6 mb-4 border-2 border-red-300">
+            <div class="text-center mb-6">
+                <div class="inline-block bg-red-600 text-white px-4 py-2 rounded-full text-sm font-bold mb-4 animate-pulse">
+                    <i class="fas fa-gift mr-2"></i>24時間限定キャンペーン
+                </div>
+                <h2 class="text-3xl font-bold text-red-700 mb-2">
+                    <i class="fas fa-exclamation-circle mr-2"></i>メンテナンスお詫び特典
+                </h2>
+                <p class="text-gray-700 text-lg mb-4">
+                    メンテナンスでご迷惑をおかけしました。<br>
+                    お詫びとして<span class="text-3xl font-bold text-red-600">1,000ポイント</span>をプレゼント！
+                </p>
+            </div>
+
+            <!-- カウントダウンタイマー -->
+            <div id="bonusTimer" class="bg-white rounded-lg p-4 mb-4 text-center">
+                <div class="text-sm text-gray-600 mb-2">キャンペーン終了まで</div>
+                <div class="text-3xl font-bold text-red-600">
+                    <i class="fas fa-clock mr-2"></i>
+                    <span id="remainingTime">--:--:--</span>
+                </div>
+            </div>
+
+            <!-- 受け取りボタン -->
+            <div id="bonusButtonContainer" class="mb-6">
+                <button 
+                    id="claimBonusBtn"
+                    onclick="claimSpecialBonus()" 
+                    class="w-full bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white font-bold py-4 rounded-lg transition duration-200 flex items-center justify-center text-xl shadow-lg transform hover:scale-105"
+                >
+                    <i class="fas fa-gift mr-3 text-2xl"></i>
+                    1,000ポイント受け取る
+                </button>
+            </div>
+
+            <!-- 受け取り済み表示（非表示） -->
+            <div id="bonusClaimed" class="hidden bg-green-100 border-2 border-green-500 rounded-lg p-4 text-center">
+                <i class="fas fa-check-circle text-green-600 text-3xl mb-2"></i>
+                <p class="text-green-800 font-bold text-lg">受け取り済み</p>
+                <p class="text-sm text-gray-600 mt-2">受け取り日時: <span id="claimedTime">--</span></p>
+            </div>
+
+            <!-- 期限切れ表示（非表示） -->
+            <div id="bonusExpired" class="hidden bg-gray-100 border-2 border-gray-400 rounded-lg p-4 text-center">
+                <i class="fas fa-times-circle text-gray-500 text-3xl mb-2"></i>
+                <p class="text-gray-700 font-bold text-lg">キャンペーン終了</p>
+                <p class="text-sm text-gray-600 mt-2">次回のキャンペーンをお楽しみに！</p>
+            </div>
+
+            <!-- 解説動画 -->
+            <div class="bg-white rounded-lg p-4 mt-6">
+                <h3 class="font-bold text-gray-800 mb-3 text-center">
+                    <i class="fas fa-video mr-2 text-red-600"></i>
+                    最新プラットフォーム操作ガイド
+                </h3>
+                <div class="aspect-video">
+                    <iframe 
+                        width="100%" 
+                        height="100%" 
+                        src="https://www.youtube.com/embed/2sWLyjMbUns" 
+                        title="プラットフォーム操作ガイド" 
+                        frameborder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowfullscreen
+                        class="rounded-lg"
+                    ></iframe>
+                </div>
+                <p class="text-sm text-gray-600 mt-2 text-center">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    動画を見て最新機能をマスターしよう！
+                </p>
+            </div>
+        </div>
+
         <!-- 取引履歴 -->
         <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-2xl font-bold mb-4"><i class="fas fa-history mr-2 text-yellow-500"></i>取引履歴</h2>
@@ -3628,8 +3789,92 @@ app.get('/mypage', (c) => {
             window.location.href = '/';
         }
 
+        // 特別ボーナス関連
+        let bonusTimerInterval = null;
+
+        async function loadBonusStatus() {
+            try {
+                const response = await axios.get('/api/special-bonus/status');
+                const data = response.data;
+                
+                if (data.isExpired) {
+                    // 期限切れ
+                    document.getElementById('bonusTimer').classList.add('hidden');
+                    document.getElementById('bonusButtonContainer').classList.add('hidden');
+                    document.getElementById('bonusExpired').classList.remove('hidden');
+                } else if (data.claimed) {
+                    // 受け取り済み
+                    document.getElementById('bonusTimer').classList.add('hidden');
+                    document.getElementById('bonusButtonContainer').classList.add('hidden');
+                    document.getElementById('bonusClaimed').classList.remove('hidden');
+                    
+                    const claimedTime = new Date(data.claimedAt).toLocaleString('ja-JP', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    document.getElementById('claimedTime').textContent = claimedTime;
+                } else {
+                    // 受け取り可能（カウントダウン開始）
+                    startBonusCountdown(data.remainingTimeMs);
+                }
+            } catch (error) {
+                console.error('ボーナス状況取得エラー:', error);
+            }
+        }
+
+        function startBonusCountdown(remainingMs) {
+            updateCountdown(remainingMs);
+            
+            bonusTimerInterval = setInterval(() => {
+                remainingMs -= 1000;
+                
+                if (remainingMs <= 0) {
+                    clearInterval(bonusTimerInterval);
+                    location.reload(); // 期限切れ時は再読み込み
+                } else {
+                    updateCountdown(remainingMs);
+                }
+            }, 1000);
+        }
+
+        function updateCountdown(ms) {
+            const hours = Math.floor(ms / (1000 * 60 * 60));
+            const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+            
+            const timeString = \`\${String(hours).padStart(2, '0')}:\${String(minutes).padStart(2, '0')}:\${String(seconds).padStart(2, '0')}\`;
+            document.getElementById('remainingTime').textContent = timeString;
+        }
+
+        async function claimSpecialBonus() {
+            const btn = document.getElementById('claimBonusBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-3"></i>受け取り中...';
+            
+            try {
+                const response = await axios.post('/api/special-bonus/claim');
+                const data = response.data;
+                
+                if (data.success) {
+                    alert(\`🎉 \${data.message}\\n新しいポイント残高: \${data.newBalance} pt\`);
+                    
+                    // ページ全体を再読み込み
+                    location.reload();
+                }
+            } catch (error) {
+                const errorMsg = error.response?.data?.error || '受け取りに失敗しました';
+                alert('❌ ' + errorMsg);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-gift mr-3 text-2xl"></i>1,000ポイント受け取る';
+            }
+        }
+
         loadUserData();
         loadTradeHistory();
+        loadBonusStatus();
     </script>
 </body>
 </html>
