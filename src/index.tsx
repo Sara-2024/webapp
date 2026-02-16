@@ -2423,6 +2423,10 @@ app.get('/trade', async (c) => {
                     }
                 }
 
+                // 【サイン表示を無効化】
+                // フロントエンド自動生成モードでは、サインはDBに保存されないため
+                // 初期ロード時のサインマーカー表示も無効化します
+                /*
                 // サインをマーカーとして表示（表示範囲内のみ）
                 if (signals.length > 0 && candleData.length > 0) {
                     // 🔒 表示範囲の開始時刻を取得（最新100本）
@@ -2441,6 +2445,7 @@ app.get('/trade', async (c) => {
                     candlestickSeries.setMarkers(markers);
                     signalMarkers = markers;
                 }
+                */
 
             } catch (error) {
                 console.error('チャートデータ取得エラー:', error);
