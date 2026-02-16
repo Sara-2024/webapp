@@ -4502,7 +4502,7 @@ app.get('/admin', (c) => {
         </div>
 
         <!-- システム情報（サイン管理に変更） -->
-        <div id="systemPanel" class="space-y-4">
+        <div id="systemPanel" class="space-y-4 hidden">
             <!-- サイン生成コントロール -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4579,7 +4579,7 @@ app.get('/admin', (c) => {
         </div>
 
         <!-- ユーザー管理 -->
-        <div id="usersPanel" class="space-y-4">
+        <div id="usersPanel" class="space-y-4 hidden">
             <!-- ユーザー追加フォーム -->
             <div class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-2xl font-bold mb-4">
