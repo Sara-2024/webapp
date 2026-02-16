@@ -175,68 +175,6 @@ app.post('/api/auth/login', async (c) => {
   })
 })
 
-// 新規登録
-app.post('/api/auth/register', async (c) => {
-  const { password } = await c.req.json()
-  
-  // パスワード検証：7文字、数字6文字+英字1文字
-  if (!password || password.length !== 7) {
-    return c.json({ error: 'パスワードは7文字（数字6桁+英字1文字）で入力してください' }, 400)
-  }
-  
-  // 数字6文字と英字1文字を含むかチェック
-  const digitCount = (password.match(/\d/g) || []).length
-  const letterCount = (password.match(/[a-zA-Z]/g) || []).length
-  
-  if (digitCount !== 6 || letterCount !== 1) {
-    return c.json({ error: 'パスワードは数字6桁と英字1文字を含む必要があります' }, 400)
-  }
-
-  // 🔒 重複チェック：既に同じパスワードのユーザーが存在するか確認
-  const existingUser = await c.env.DB.prepare(`
-    SELECT id FROM users WHERE password = ?
-  `).bind(password).first()
-
-  if (existingUser) {
-    return c.json({ 
-      error: 'このパスワードは既に使用されています。別のパスワードを入力してください',
-      alreadyExists: true 
-    }, 409)  // 409 Conflict
-  }
-
-  // ランダムなユーザー名を生成
-  const username = generateRandomUsername()
-
-  // ユーザー作成
-  const result = await c.env.DB.prepare(`
-    INSERT INTO users (password, username, balance, points)
-    VALUES (?, ?, 1000000.0, 0)
-  `).bind(password, username).run()
-
-  const userId = result.meta.last_row_id
-
-  // 登録ボーナスポイント付与
-  await addPoints(c.env.DB, userId, 100, 'REGISTRATION', '新規登録ボーナス')
-
-  // セッション設定
-  setCookie(c, 'user_id', String(userId), {
-    httpOnly: true,
-    secure: true,
-    maxAge: 60 * 60 * 24 * 7 // 7日間
-  })
-
-  return c.json({ 
-    success: true,
-    user: {
-      id: userId,
-      username: username,
-      balance: 1000000.0,
-      points: 100
-    },
-    message: '登録が完了しました！100ポイント獲得！'
-  })
-})
-
 // 管理者ログイン
 app.post('/api/auth/admin-login', async (c) => {
   const { email, password } = await c.req.json()
@@ -1647,6 +1585,17 @@ app.post('/api/admin/users', async (c) => {
     return c.json({ error: 'パスワードは数字6桁と英字1文字を含む必要があります' }, 400)
   }
 
+  // 🔒 重複チェック：既に同じパスワードのユーザーが存在するか確認
+  const existingUser = await c.env.DB.prepare(`
+    SELECT id FROM users WHERE password = ?
+  `).bind(password).first()
+
+  if (existingUser) {
+    return c.json({ 
+      error: 'このパスワードは既に使用されています。別のパスワードを指定してください'
+    }, 409)
+  }
+
   const finalUsername = username || generateRandomUsername()
 
   const result = await c.env.DB.prepare(`
@@ -1808,18 +1757,13 @@ app.get('/', (c) => {
                 <i class="fas fa-sign-in-alt mr-2"></i>
                 ログイン
             </button>
-            
-            <button 
-                type="button"
-                onclick="switchToRegister()"
-                class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center mt-3"
-            >
-                <i class="fas fa-user-plus mr-2"></i>
-                新規登録
-            </button>
         </form>
 
         <div class="mt-8 text-center">
+            <p class="text-sm text-gray-500 mb-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                アカウントは管理者が発行します
+            </p>
             <a href="/admin-login" class="text-sm text-gray-500 hover:text-gray-700 transition">
                 管理者ログイン
             </a>
@@ -1828,49 +1772,19 @@ app.get('/', (c) => {
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
-        let isRegisterMode = false;
-        
-        function switchToRegister() {
-            isRegisterMode = !isRegisterMode;
-            const form = document.getElementById('loginForm');
-            const submitBtn = form.querySelector('button[type="submit"]');
-            const toggleBtn = form.querySelector('button[type="button"]');
-            
-            if (isRegisterMode) {
-                submitBtn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>新規登録';
-                submitBtn.className = 'w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center';
-                toggleBtn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>ログインに戻る';
-                toggleBtn.className = 'w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center mt-3';
-            } else {
-                submitBtn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>ログイン';
-                submitBtn.className = 'w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center';
-                toggleBtn.innerHTML = '<i class="fas fa-user-plus mr-2"></i>新規登録';
-                toggleBtn.className = 'w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition duration-200 flex items-center justify-center mt-3';
-            }
-        }
-        
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const password = document.getElementById('password').value;
 
             try {
-                const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
-                const response = await axios.post(endpoint, { password });
+                const response = await axios.post('/api/auth/login', { password });
                 
                 if (response.data.success) {
-                    if (isRegisterMode && response.data.message) {
-                        alert(response.data.message);
-                    }
                     window.location.href = '/trade';
                 }
             } catch (error) {
                 const errorData = error.response?.data;
-                if (errorData?.alreadyExists) {
-                    // 重複エラーの場合、詳細メッセージを表示
-                    alert('⚠️ ' + errorData.error + '\n\n別のパスワードをお試しください。');
-                } else {
-                    alert(errorData?.error || (isRegisterMode ? '登録に失敗しました' : 'ログインに失敗しました'));
-                }
+                alert(errorData?.error || 'ログインに失敗しました');
             }
         });
 
