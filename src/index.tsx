@@ -870,19 +870,19 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   const minVolatilityPercent = 0.001  // 0.1%
   const minVolatility = open * minVolatilityPercent
   
-  // ボラティリティ設定（0.3% ～ 0.8%）
+  // ボラティリティ設定（0.15% ～ 0.4%）
   const trendDirection = Math.random() > 0.5 ? 1 : -1
-  const volatilityPercent = 0.003 + Math.random() * 0.005  // 0.3% ~ 0.8%
+  const volatilityPercent = 0.0015 + Math.random() * 0.0025  // 0.15% ~ 0.4%
   const volatility = open * volatilityPercent
 
   const prices = []
   let currentPrice = open
 
-  // 10回の価格変動をシミュレート（より穏やかな変動）
+  // 10回の価格変動をシミュレート（非常に穏やかな変動）
   for (let i = 0; i < 10; i++) {
-    const trendComponent = trendDirection * volatility * 0.1
-    // ランダムウォークの振幅を大幅に削減（0.3倍）
-    const randomWalk = (Math.random() - 0.5) * volatility * 0.3
+    const trendComponent = trendDirection * volatility * 0.08
+    // ランダムウォークの振幅を極小に（0.15倍）
+    const randomWalk = (Math.random() - 0.5) * volatility * 0.15
     currentPrice = currentPrice + trendComponent + randomWalk
     prices.push(currentPrice)
   }
@@ -891,8 +891,8 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   let high = Math.max(open, close, ...prices)
   let low = Math.min(open, close, ...prices)
   
-  // 過度な変動を制限（最大変動幅を2.5%に制限）
-  const maxChangePercent = 0.025  // 2.5%
+  // 過度な変動を制限（最大変動幅を0.5%に制限）
+  const maxChangePercent = 0.005  // 0.5%
   const maxChange = open * maxChangePercent
   
   if (Math.abs(close - open) > maxChange) {
