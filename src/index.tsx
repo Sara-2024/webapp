@@ -1379,8 +1379,19 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
     ? price + targetMove 
     : price - targetMove
 
-  // 勝率75%でランダムに成功/失敗を決定
-  const success = Math.random() < 0.75 ? 1 : 0
+  // RSI値に応じて勝率を調整
+  let winRate = 0.75  // 基本勝率75%
+  
+  if (rsi >= 36 && rsi <= 60) {
+    // RSIが理想的な範囲内 → 勝率アップ
+    winRate = 0.85  // 85%勝率
+  } else if (rsi > 60 || rsi < 36) {
+    // 過度なトレンド時（買われすぎ/売られすぎ） → 負けやすい
+    winRate = 0.4  // 40%勝率
+  }
+
+  // 勝率に基づいて成功/失敗を決定
+  const success = Math.random() < winRate ? 1 : 0
 
   // サインをDBに保存
   await c.env.DB.prepare(`
