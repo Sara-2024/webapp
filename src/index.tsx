@@ -469,12 +469,12 @@ app.post('/api/trade/auto-close-expired', async (c) => {
       const amount = trade.amount as number
       const type = trade.type as string
 
-      // 損益計算
+      // 損益計算（1ロット = 100オンス）
       let profitLoss = 0
       if (type === 'BUY') {
-        profitLoss = (exitPrice - entryPrice) * amount * 152.96
+        profitLoss = (exitPrice - entryPrice) * amount * 100 * 152.96
       } else {
-        profitLoss = (entryPrice - exitPrice) * amount * 152.96
+        profitLoss = (entryPrice - exitPrice) * amount * 100 * 152.96
       }
 
       totalClosedProfit += profitLoss
@@ -780,10 +780,12 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
 async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<{close: number}> {
   const open = previousClose
 
-  // より自然なローソク足を生成（始値から変化する）
+  // より小さな価格変動に調整（5-10分で最大3万円の利益目標）
+  // 3万円 ÷ 15,296円/ドル = 1.96ドル
+  // 10-20本のローソク足で1.96ドル変動 → 1本あたり0.05-0.10ドル
   const trendDirection = Math.random() > 0.5 ? 1 : -1
-  const trendStrength = 0.1 + Math.random() * 0.3  // 0.1-0.4 USD
-  const volatility = 0.05 + Math.random() * 0.1   // 0.05-0.15 USD
+  const trendStrength = 0.02 + Math.random() * 0.06  // 0.02-0.08 USD (以前: 0.1-0.4)
+  const volatility = 0.01 + Math.random() * 0.03   // 0.01-0.04 USD (以前: 0.05-0.15)
 
   const prices = []
   let currentPrice = open
