@@ -1939,6 +1939,10 @@ app.get('/trade', async (c) => {
                     <div>
                         <h3 class="text-xs sm:text-sm text-gray-600 mb-1">GOLD10 現在価格</h3>
                         <div id="gold10Price" class="text-2xl sm:text-4xl font-bold text-yellow-700">$0.00</div>
+                        <div class="mt-1 text-xs text-gray-500">
+                            <i class="fas fa-clock mr-1"></i>
+                            次のローソク足まで <span id="nextCandleCountdown" class="font-bold text-blue-600">--</span>
+                        </div>
                     </div>
                     <div class="text-right">
                         <div class="text-xs sm:text-sm text-gray-600">RSI (14)</div>
@@ -3098,10 +3102,32 @@ app.get('/trade', async (c) => {
             
             console.log('[Genspark] 📊 初期価格:', window.__lastClose);
             
+            // カウントダウンタイマー（1秒ごとに更新）
+            let secondsLeft = 30;
+            window.__countdownTimer = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft <= 0) {
+                    secondsLeft = 30;
+                }
+                const countdownEl = document.getElementById('nextCandleCountdown');
+                if (countdownEl) {
+                    countdownEl.textContent = secondsLeft + '秒';
+                    // 10秒以下になったら色を変える
+                    if (secondsLeft <= 10) {
+                        countdownEl.className = 'font-bold text-red-600 animate-pulse';
+                    } else {
+                        countdownEl.className = 'font-bold text-blue-600';
+                    }
+                }
+            }, 1000);
+            
             // 30秒ごとに新しいローソク足を生成
             window.__candleTimer = setInterval(async () => {
                 try {
                     console.log('[Genspark] ⏰ 30秒タイマー発火 - 新しいローソク足を生成中...');
+                    
+                    // カウントダウンをリセット
+                    secondsLeft = 30;
                     
                     const open = window.__lastClose;
                     
