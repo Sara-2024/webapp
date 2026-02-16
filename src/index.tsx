@@ -150,16 +150,11 @@ app.post('/api/auth/login', async (c) => {
 
     await c.env.DB.prepare(`
       UPDATE users 
-      SET last_login_date = ?, consecutive_login_days = ?, last_activity_at = CURRENT_TIMESTAMP
+      SET last_login_date = ?, consecutive_login_days = ?
       WHERE id = ?
     `).bind(today, consecutiveDays, user.id).run()
   } else {
-    // 既にログイン済みでも、最終アクティビティ時刻を更新
-    await c.env.DB.prepare(`
-      UPDATE users 
-      SET last_activity_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).bind(user.id).run()
+    // 既にログイン済みの場合は何もしない
   }
 
   // セッション設定
@@ -2518,10 +2513,26 @@ app.get('/trade', async (c) => {
                 priceScaleId: '',
             });
 
-            // 両チャートのクロスヘアを同期
+            // 両チャートのクロスヘアを同期 + RSI/MACD表示
             chart.subscribeCrosshairMove((param) => {
                 if (param.time) {
                     macdChart.timeScale().scrollToPosition(0, false);
+                    
+                    // RSI値を表示
+                    const data = param.seriesData.get(candlestickSeries);
+                    if (data && window.candlesDataWithRSI) {
+                        const candle = window.candlesDataWithRSI.find(c => c.time === param.time);
+                        if (candle && candle.rsi !== undefined) {
+                            const rsiElement = document.getElementById('gold10RSI');
+                            if (rsiElement) {
+                                rsiElement.textContent = candle.rsi.toFixed(1);
+                                // RSI色分け
+                                rsiElement.className = candle.rsi >= 70 ? 'text-2xl font-bold text-red-500' :
+                                                       candle.rsi <= 30 ? 'text-2xl font-bold text-green-500' :
+                                                       'text-2xl font-bold text-blue-500';
+                            }
+                        }
+                    }
                 }
             });
             
@@ -4489,6 +4500,7 @@ app.get('/admin', (c) => {
     <title>管理者ダッシュボード</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="bg-gray-100">
     <header class="bg-gradient-to-r from-red-600 to-red-500 text-white p-4 shadow-lg">
@@ -4869,6 +4881,198 @@ app.get('/admin', (c) => {
             } catch (error) {
                 console.error('システム情報取得エラー:', error);
             }
+        }
+
+        // 管理者用GOLD10チャート初期化
+        let adminChart = null;
+        let adminCandlestickSeries = null;
+        let adminMacdChart = null;
+        let adminMacdLineSeries = null;
+        let adminMacdSignalSeries = null;
+        let adminMacdHistogramSeries = null;
+        
+        async function initAdminChart() {
+            try {
+                console.log('[Admin] チャート初期化開始');
+                
+                // チャートコンテナ取得
+                const chartContainer = document.getElementById('adminChartContainer');
+                const macdContainer = document.getElementById('adminMacdContainer');
+                
+                if (!chartContainer || !macdContainer) {
+                    console.error('[Admin] チャートコンテナが見つかりません');
+                    return;
+                }
+                
+                // 価格チャート作成
+                adminChart = LightweightCharts.createChart(chartContainer, {
+                    width: chartContainer.clientWidth,
+                    height: 500,
+                    layout: { background: { color: '#ffffff' }, textColor: '#333' },
+                    grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+                    timeScale: { timeVisible: true, secondsVisible: true }
+                });
+                
+                adminCandlestickSeries = adminChart.addCandlestickSeries({
+                    upColor: '#26a69a', downColor: '#ef5350',
+                    borderVisible: false,
+                    wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+                });
+                
+                // MACDチャート作成
+                adminMacdChart = LightweightCharts.createChart(macdContainer, {
+                    width: macdContainer.clientWidth,
+                    height: 150,
+                    layout: { background: { color: '#ffffff' }, textColor: '#333' },
+                    grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+                    timeScale: { timeVisible: true, secondsVisible: true }
+                });
+                
+                adminMacdLineSeries = adminMacdChart.addLineSeries({ color: '#2196F3', lineWidth: 2, title: 'MACD' });
+                adminMacdSignalSeries = adminMacdChart.addLineSeries({ color: '#FF6D00', lineWidth: 2, title: 'Signal' });
+                adminMacdHistogramSeries = adminMacdChart.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } });
+                
+                // 12時間分のデータ取得
+                const response = await axios.get('/api/gold10/candles?hours=12');
+                const candles = response.data;
+                
+                if (candles.length === 0) {
+                    console.warn('[Admin] ローソク足データがありません');
+                    return;
+                }
+                
+                // ローソク足データを設定
+                const chartData = candles.map(c => ({
+                    time: c.timestamp,
+                    open: c.open,
+                    high: c.high,
+                    low: c.low,
+                    close: c.close
+                }));
+                adminCandlestickSeries.setData(chartData);
+                
+                // MACD計算
+                const macdData = calculateMACD(candles);
+                if (macdData.length > 0) {
+                    adminMacdLineSeries.setData(macdData.map(d => ({ time: d.time, value: d.macd })));
+                    adminMacdSignalSeries.setData(macdData.filter(d => d.signal !== null).map(d => ({ time: d.time, value: d.signal })));
+                    adminMacdHistogramSeries.setData(macdData.map(d => ({ 
+                        time: d.time, 
+                        value: d.histogram,
+                        color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
+                    })));
+                    
+                    // チャートの時間軸を同期
+                    adminChart.timeScale().fitContent();
+                    adminMacdChart.timeScale().fitContent();
+                }
+                
+                // 情報更新
+                const latest = candles[candles.length - 1];
+                document.getElementById('adminGoldPrice').textContent = '$' + latest.close.toFixed(2);
+                document.getElementById('adminRSI').textContent = latest.rsi ? latest.rsi.toFixed(1) : '--';
+                document.getElementById('adminTotalCandles').textContent = candles.length + '本';
+                
+                // 5秒ごとに更新
+                setInterval(updateAdminChart, 5000);
+                
+                // カウントダウン開始
+                startAdminCountdown();
+                
+                console.log('[Admin] チャート初期化完了');
+                
+            } catch (error) {
+                console.error('[Admin] チャート初期化エラー:', error);
+            }
+        }
+        
+        // 管理者チャート更新
+        async function updateAdminChart() {
+            try {
+                const response = await axios.get('/api/gold10/candles/latest?limit=100');
+                const data = response.data;
+                
+                if (!data.candles || data.candles.length === 0) return;
+                
+                const latest = data.candles[data.candles.length - 1];
+                
+                // 価格とRSI更新
+                document.getElementById('adminGoldPrice').textContent = '$' + latest.close.toFixed(2);
+                document.getElementById('adminRSI').textContent = latest.rsi ? latest.rsi.toFixed(1) : '--';
+                
+                // 新しいローソク足があればチャート更新
+                if (adminCandlestickSeries && latest.timestamp > window.__lastAdminCandleTime) {
+                    adminCandlestickSeries.update({
+                        time: latest.timestamp,
+                        open: latest.open,
+                        high: latest.high,
+                        low: latest.low,
+                        close: latest.close
+                    });
+                    
+                    // MACD更新
+                    const macdData = calculateMACD(data.candles.slice(-26));
+                    if (macdData.length > 0) {
+                        const lastMacd = macdData[macdData.length - 1];
+                        adminMacdLineSeries.update({ time: lastMacd.time, value: lastMacd.macd });
+                        if (lastMacd.signal !== null) {
+                            adminMacdSignalSeries.update({ time: lastMacd.time, value: lastMacd.signal });
+                        }
+                        adminMacdHistogramSeries.update({ 
+                            time: lastMacd.time, 
+                            value: lastMacd.histogram,
+                            color: lastMacd.histogram >= 0 ? '#26a69a' : '#ef5350'
+                        });
+                    }
+                    
+                    window.__lastAdminCandleTime = latest.timestamp;
+                }
+                
+            } catch (error) {
+                console.error('[Admin] チャート更新エラー:', error);
+            }
+        }
+        
+        // 管理者用カウントダウン
+        function startAdminCountdown() {
+            setInterval(async () => {
+                try {
+                    const response = await axios.get('/api/gold10/candles/latest?limit=1');
+                    const secondsLeft = response.data.secondsUntilNext || 0;
+                    document.getElementById('adminCountdown').textContent = secondsLeft + '秒';
+                } catch (error) {
+                    console.error('[Admin] カウントダウン更新エラー:', error);
+                }
+            }, 1000);
+        }
+        
+        // MACD計算関数
+        function calculateMACD(candles, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+            if (candles.length < slowPeriod) return [];
+            
+            const closes = candles.map(c => c.close);
+            const calculateEMA = (data, period) => {
+                const k = 2 / (period + 1);
+                let ema = data.slice(0, period).reduce((sum, val) => sum + val, 0) / period;
+                const result = [ema];
+                for (let i = period; i < data.length; i++) {
+                    ema = data[i] * k + ema * (1 - k);
+                    result.push(ema);
+                }
+                return result;
+            };
+            
+            const fastEMA = calculateEMA(closes, fastPeriod);
+            const slowEMA = calculateEMA(closes, slowPeriod);
+            const macdLine = fastEMA.slice(slowPeriod - fastPeriod).map((fast, i) => fast - slowEMA[i]);
+            const signalLine = calculateEMA(macdLine, signalPeriod);
+            
+            return candles.slice(slowPeriod - 1).map((candle, i) => ({
+                time: candle.timestamp,
+                macd: macdLine[i],
+                signal: i >= signalPeriod - 1 ? signalLine[i - signalPeriod + 1] : null,
+                histogram: i >= signalPeriod - 1 ? macdLine[i] - signalLine[i - signalPeriod + 1] : macdLine[i]
+            }));
         }
 
         // 即座にサイン生成【サイン機能完全無効化】
