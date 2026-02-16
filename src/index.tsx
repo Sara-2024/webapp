@@ -1373,25 +1373,45 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
   // サイン価格（現在価格）
   const price = latestCandle.close
 
-  // 目標価格（約5ドル先）
-  const targetMove = 4.5 + Math.random() * 1.0  // $4.5-$5.5
+  // 目標価格（シンプル化：BUYなら+0.1%、SELLなら-0.1%）
+  const targetMove = price * 0.001  // 0.1%
   const target_price = type === 'BUY' 
     ? price + targetMove 
     : price - targetMove
 
-  // RSI値に応じて勝率を調整
-  let winRate = 0.75  // 基本勝率75%
-  
-  if (rsi >= 36 && rsi <= 60) {
-    // RSIが理想的な範囲内 → 勝率アップ
-    winRate = 0.85  // 85%勝率
-  } else if (rsi > 60 || rsi < 36) {
-    // 過度なトレンド時（買われすぎ/売られすぎ） → 負けやすい
-    winRate = 0.4  // 40%勝率
-  }
+  // ⏰ 5本後（150秒後）のローソク足を取得
+  const targetTime = latestCandle.timestamp + 150  // 5本 × 30秒 = 150秒
+  const futureCandle = await c.env.DB.prepare(`
+    SELECT close FROM gold10_candles 
+    WHERE timestamp >= ?
+    ORDER BY timestamp ASC 
+    LIMIT 1
+  `).bind(targetTime).first()
 
-  // 勝率に基づいて成功/失敗を決定
-  const success = Math.random() < winRate ? 1 : 0
+  let success = null  // まだ未確定
+
+  if (futureCandle) {
+    // 5本後のローソク足が存在する場合、実際の価格で判定
+    if (type === 'BUY') {
+      // 買いサイン：5本後の価格がサイン価格よりプラス圏なら勝ち
+      success = futureCandle.close > price ? 1 : 0
+    } else {
+      // 売りサイン：5本後の価格がサイン価格よりマイナス圏なら勝ち
+      success = futureCandle.close < price ? 1 : 0
+    }
+  } else {
+    // 5本後のローソク足がまだ存在しない場合、RSI連動の勝率で予測
+    let winRate = 0.75  // 基本勝率75%
+    
+    if (rsi >= 36 && rsi <= 60) {
+      winRate = 0.85  // RSI理想的範囲
+    } else if (rsi > 60 || rsi < 36) {
+      winRate = 0.4   // 過度なトレンド
+    }
+
+    // 確率的に成功を予測（後で実際の結果で上書き可能）
+    success = Math.random() < winRate ? 1 : 0
+  }
 
   // サインをDBに保存
   await c.env.DB.prepare(`
@@ -1810,6 +1830,63 @@ app.get('/api/gold10/signals', async (c) => {
   `).bind(cutoffTime).all()
 
   return c.json(results)
+})
+
+// サイン勝敗を実際のローソク足で更新（バッチ処理）
+app.post('/api/gold10/signals/update-results', async (c) => {
+  const now = Math.floor(Date.now() / 1000)
+  
+  // 5本後の判定が可能な時刻（150秒以上前）のサインを取得
+  const judgmentTime = now - 150
+  
+  // success が NULL または 未確定のサインを取得
+  const signals = await c.env.DB.prepare(`
+    SELECT * FROM gold10_signals
+    WHERE timestamp <= ?
+    ORDER BY timestamp DESC
+    LIMIT 100
+  `).bind(judgmentTime).all()
+
+  let updatedCount = 0
+
+  for (const signal of (signals.results || [])) {
+    const targetTime = signal.timestamp + 150  // 5本後
+    
+    // 5本後のローソク足を取得
+    const futureCandle = await c.env.DB.prepare(`
+      SELECT close FROM gold10_candles 
+      WHERE timestamp >= ?
+      ORDER BY timestamp ASC 
+      LIMIT 1
+    `).bind(targetTime).first()
+
+    if (futureCandle) {
+      let success = 0
+      
+      if (signal.type === 'BUY') {
+        // 買いサイン：5本後の価格がサイン価格よりプラス圏なら勝ち
+        success = futureCandle.close > signal.price ? 1 : 0
+      } else {
+        // 売りサイン：5本後の価格がサイン価格よりマイナス圏なら勝ち
+        success = futureCandle.close < signal.price ? 1 : 0
+      }
+
+      // DBを更新
+      await c.env.DB.prepare(`
+        UPDATE gold10_signals 
+        SET success = ?
+        WHERE id = ?
+      `).bind(success, signal.id).run()
+
+      updatedCount++
+    }
+  }
+
+  return c.json({ 
+    success: true, 
+    updated: updatedCount,
+    message: `${updatedCount}件のサイン結果を更新しました`
+  })
 })
 
 // ユーザー追加
