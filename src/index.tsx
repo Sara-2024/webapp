@@ -3717,7 +3717,7 @@ app.get('/mypage', (c) => {
                     <iframe 
                         width="100%" 
                         height="100%" 
-                        src="https://www.youtube.com/embed/2sWLyjMbUns" 
+                        src="https://www.youtube.com/embed/yTP5357z8b4" 
                         title="プラットフォーム操作ガイド" 
                         frameborder="0" 
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
