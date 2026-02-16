@@ -2501,6 +2501,8 @@ app.get('/trade', async (c) => {
         }
         
         // 次回サイン予定時刻を計算・表示
+        // 【サイン機能完全無効化】次回サイン予定時刻の更新を無効化
+        /*
         async function updateNextSignalTime() {
             try {
                 const response = await axios.get('/api/gold10/signals?hours=12');
@@ -2540,6 +2542,11 @@ app.get('/trade', async (c) => {
             } catch (error) {
                 console.error('次回サイン時刻計算エラー:', error);
             }
+        }
+        */
+        // サイン機能を無効化したため、ダミー関数を定義
+        async function updateNextSignalTime() {
+            // 何もしない
         }
 
         // 【Lightweight Charts 固定モード】
@@ -4512,17 +4519,17 @@ app.get('/admin', (c) => {
         // システム情報を読み込み
         async function loadSystemInfo() {
             try {
-                // サイン情報を取得
-                const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
-                const signals = signalsResponse.data;
+                // 【サイン機能完全無効化】サイン情報の取得を無効化
+                // const signalsResponse = await axios.get('/api/gold10/signals?hours=12');
+                // const signals = signalsResponse.data;
                 
                 // ローソク足情報を取得
                 const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
                 const candles = candlesResponse.data;
                 document.getElementById('totalCandles').textContent = candles.length + '本';
                 
-                // サイン数
-                document.getElementById('totalSignals').textContent = signals.length + '本';
+                // サイン数（サイン機能無効化のため0固定）
+                document.getElementById('totalSignals').textContent = '0本';
                 
                 // 現在価格
                 if (candles.length > 0) {
@@ -4534,8 +4541,12 @@ app.get('/admin', (c) => {
             }
         }
 
-        // 即座にサイン生成
+        // 即座にサイン生成【サイン機能完全無効化】
         async function generateSignalNow(type) {
+            alert('サイン生成機能は現在無効化されています');
+            return;
+            
+            /* 【サイン機能完全無効化】
             if (!confirm(\`\${type === 'BUY' ? '買い' : '売り'}サインを生成しますか？\`)) {
                 return;
             }
@@ -4553,10 +4564,15 @@ app.get('/admin', (c) => {
                     alert('サイン生成に失敗しました: ' + (error.response?.data?.error || error.message));
                 }
             }
+            */
         }
 
-        // サイン予約
+        // サイン予約【サイン機能完全無効化】
         async function reserveSignal() {
+            alert('サイン予約機能は現在無効化されています');
+            return;
+            
+            /* 【サイン機能完全無効化】
             const type = document.getElementById('reserveSignalType').value;
             const hours = parseInt(document.getElementById('reserveHours').value);
             
@@ -4576,6 +4592,9 @@ app.get('/admin', (c) => {
                 } else {
                     alert('サイン予約に失敗しました: ' + (error.response?.data?.error || error.message));
                 }
+            }
+            */
+        }
             }
         }
 
