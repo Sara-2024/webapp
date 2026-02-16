@@ -2,15 +2,11 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
-import { CandleGenerator } from './CandleGenerator'
 
 type Bindings = {
   DB: D1Database
   TWELVE_DATA_API_KEY?: string
-  CANDLE_GENERATOR: DurableObjectNamespace
 }
-
-export { CandleGenerator }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -731,26 +727,80 @@ app.get('/api/gold10/candles', async (c) => {
   return c.json(sortedCandles)
 })
 
-// Durable Object: Start candle generator
-app.post('/api/gold10/generator/start', async (c) => {
-  const id = c.env.CANDLE_GENERATOR.idFromName('global')
-  const stub = c.env.CANDLE_GENERATOR.get(id)
-  const response = await stub.fetch('https://fake-host/start')
-  const data = await response.json()
-  return c.json(data)
-})
+// Server-side candle generation helper
+async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
+  const now = Math.floor(Date.now() / 1000)
+  
+  // Get the latest candle
+  const latest = await db.prepare(`
+    SELECT time, close FROM gold10_candles 
+    ORDER BY time DESC 
+    LIMIT 1
+  `).first()
 
-// Durable Object: Get generator status
-app.get('/api/gold10/generator/status', async (c) => {
-  const id = c.env.CANDLE_GENERATOR.idFromName('global')
-  const stub = c.env.CANDLE_GENERATOR.get(id)
-  const response = await stub.fetch('https://fake-host/status')
-  const data = await response.json()
-  return c.json(data)
-})
+  if (!latest) {
+    return false
+  }
+
+  // Check if we need to generate a new candle (30+ seconds since last)
+  const timeSinceLast = now - latest.time
+  if (timeSinceLast < 30) {
+    return false
+  }
+
+  // Calculate how many candles we need to generate
+  const candlesToGenerate = Math.floor(timeSinceLast / 30)
+  
+  // Generate missing candles (but limit to prevent too many at once)
+  const maxToGenerate = Math.min(candlesToGenerate, 10)
+  
+  for (let i = 0; i < maxToGenerate; i++) {
+    const candleTime = latest.time + (i + 1) * 30
+    await generateSingleCandle(db, candleTime, latest.close)
+  }
+
+  return true
+}
+
+async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<void> {
+  const open = previousClose
+
+  // Simple random walk generation
+  const trendDirection = Math.random() > 0.5 ? 1 : -1
+  const trendStrength = 0.05 + Math.random() * 0.15
+  const volatility = 0.05
+
+  const prices = []
+  let currentPrice = open
+
+  for (let i = 0; i < 10; i++) {
+    const trendComponent = trendDirection * trendStrength * (1 + Math.random() * 0.2)
+    const randomWalk = (Math.random() - 0.5) * volatility
+    currentPrice = currentPrice + trendComponent + randomWalk
+    prices.push(currentPrice)
+  }
+
+  const close = prices[prices.length - 1]
+  const high = Math.max(open, close, ...prices)
+  const low = Math.min(open, close, ...prices)
+
+  // Calculate RSI (simplified - just use 50 for now)
+  const rsi = 50
+
+  // Save to DB
+  await db.prepare(`
+    INSERT OR IGNORE INTO gold10_candles (time, open, high, low, close, rsi)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(candleTime, open, high, low, close, rsi).run()
+
+  console.log(`[Server] Generated candle at ${new Date(candleTime * 1000).toISOString()}`)
+}
 
 // Get latest candles with countdown info
 app.get('/api/gold10/candles/latest', async (c) => {
+  // Try to generate new candles if needed
+  await generateCandleIfNeeded(c.env.DB)
+  
   const limit = parseInt(c.req.query('limit') || '100')
   
   // Get latest candles from DB
@@ -760,17 +810,17 @@ app.get('/api/gold10/candles/latest', async (c) => {
     LIMIT ?
   `).bind(limit).all()
 
-  // Get countdown info from Durable Object
-  const id = c.env.CANDLE_GENERATOR.idFromName('global')
-  const stub = c.env.CANDLE_GENERATOR.get(id)
-  const statusResponse = await stub.fetch('https://fake-host/status')
-  const status = await statusResponse.json()
+  // Calculate countdown
+  const now = Math.floor(Date.now() / 1000)
+  const latestCandle = candles.results[0]
+  const nextCandleTime = latestCandle ? latestCandle.time + 30 : now + 30
+  const secondsUntilNext = Math.max(0, nextCandleTime - now)
 
   return c.json({
     candles: candles.results.reverse(),
-    nextCandleTime: status.nextCandleTime,
-    secondsUntilNext: status.secondsUntilNext,
-    serverTime: Math.floor(Date.now() / 1000)
+    nextCandleTime: nextCandleTime,
+    secondsUntilNext: secondsUntilNext,
+    serverTime: now
   })
 })
 
@@ -3131,12 +3181,8 @@ app.get('/trade', async (c) => {
             window.__pollingStarted = true;
             window.__lastCandleTime = 0;
             
-            // Start the Durable Object generator
-            axios.post('/api/gold10/generator/start').then(response => {
-                console.log('[Genspark] ✅ サーバー側ローソク足生成開始:', response.data);
-            }).catch(error => {
-                console.error('[Genspark] ❌ サーバー起動エラー:', error);
-            });
+            // No need to start Durable Object - server generates on demand
+            console.log('[Genspark] ✅ サーバー同期モード起動 - サーバーが自動生成');
             
             // Poll server every 5 seconds for latest data
             window.__pollingInterval = setInterval(async () => {
