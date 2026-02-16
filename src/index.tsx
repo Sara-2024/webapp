@@ -3421,6 +3421,17 @@ app.get('/trade', async (c) => {
                             currentPrice = latestCandle.close;
                             
                             window.__lastCandleTime = latestCandle.timestamp;
+                            
+                            // 新しいローソク足が追加されたらサインも更新
+                            if (candlesDataWithRSI) {
+                                // candlesDataWithRSIに新しいローソク足を追加
+                                const existingIndex = candlesDataWithRSI.findIndex(c => c.timestamp === latestCandle.timestamp);
+                                if (existingIndex < 0) {
+                                    candlesDataWithRSI.push(latestCandle);
+                                }
+                                // サインを更新
+                                await loadUserSignals();
+                            }
                         }
                     }
                     
