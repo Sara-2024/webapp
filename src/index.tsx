@@ -301,20 +301,24 @@ app.post('/api/trade/open', async (c) => {
   // ユーザーアクティビティ更新
   await updateUserActivity(c.env.DB, parseInt(userId))
 
-  const { type, amount } = await c.req.json()
+  const { type, amount, price } = await c.req.json()
   
   if (type !== 'BUY' && type !== 'SELL') {
     return c.json({ error: '無効な取引タイプ' }, 400)
   }
 
-  // GOLD10の最新価格を取得
-  const latestCandle = await c.env.DB.prepare(`
-    SELECT close FROM gold10_candles
-    ORDER BY timestamp DESC
-    LIMIT 1
-  `).first()
-
-  const entryPrice = latestCandle ? latestCandle.close as number : 5000
+  // クライアントから送られた価格を使用（フロントエンドの表示価格と一致）
+  // フォールバック：価格が送られてこない場合はDBから取得
+  let entryPrice = price
+  
+  if (!entryPrice) {
+    const latestCandle = await c.env.DB.prepare(`
+      SELECT close FROM gold10_candles
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `).first()
+    entryPrice = latestCandle ? latestCandle.close as number : 5000
+  }
 
   const result = await c.env.DB.prepare(`
     INSERT INTO trades (user_id, type, amount, entry_price, status)
@@ -347,8 +351,14 @@ app.post('/api/trade/close/:tradeId', async (c) => {
     return c.json({ error: '取引が見つかりません' }, 404)
   }
 
-  // GOLD10の最新価格を取得（決済価格）
-  const exitPrice = await getGold10Price(c.env.DB)
+  // クライアントから送られた価格を使用、なければDBから取得
+  const body = await c.req.json().catch(() => ({}))
+  let exitPrice = body.price
+  
+  if (!exitPrice) {
+    exitPrice = await getGold10Price(c.env.DB)
+  }
+  
   const entryPrice = trade.entry_price as number
   const amount = trade.amount as number
   const type = trade.type as string
@@ -2979,7 +2989,12 @@ app.get('/trade', async (c) => {
             const amount = 1; // 1ロット固定
 
             try {
-                const response = await axios.post('/api/trade/open', { type, amount });
+                // 現在価格をサーバーに送信
+                const response = await axios.post('/api/trade/open', { 
+                    type, 
+                    amount,
+                    price: currentPrice  // フロントエンドの表示価格を送信
+                });
                 await loadOpenPositions();
                 await loadUserData();
                 
@@ -2992,7 +3007,10 @@ app.get('/trade', async (c) => {
 
         async function closePosition(tradeId) {
             try {
-                const response = await axios.post(\`/api/trade/close/\${tradeId}\`);
+                // 現在価格をサーバーに送信
+                const response = await axios.post(\`/api/trade/close/\${tradeId}\`, {
+                    price: currentPrice  // フロントエンドの表示価格を送信
+                });
                 const profitLoss = response.data.profitLoss;
                 
                 await loadOpenPositions();
