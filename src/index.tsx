@@ -4421,6 +4421,12 @@ app.get('/chat', (c) => {
 
 // 管理者ダッシュボード
 app.get('/admin', (c) => {
+  // 管理者認証チェック
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.redirect('/admin-login')
+  }
+  
   return c.html(`
 <!DOCTYPE html>
 <html lang="ja">
@@ -5311,20 +5317,8 @@ app.get('/admin', (c) => {
             e.target.value = e.target.value.replace(/[^0-9a-zA-Z]/g, '');
         });
 
-        // 初期化
-        loadUsers();
-        loadAdminVideos();
-        loadSystemInfo();
-        loadReservedSignals(); // 予約リストも読み込み
-        
-        // 10秒ごとにシステム情報を更新
-        setInterval(() => {
-            const systemPanel = document.getElementById('systemPanel');
-            if (!systemPanel.classList.contains('hidden')) {
-                loadSystemInfo();
-                loadReservedSignals(); // 予約リストも更新
-            }
-        }, 10000);
+        // 初期化: チャートパネルは最初から表示されるので初期化
+        // 他のパネルは、タブクリック時にロードされる
     </script>
 </body>
 </html>
