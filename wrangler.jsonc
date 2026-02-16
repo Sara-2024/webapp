@@ -13,6 +13,15 @@
       "database_id": "458ccf16-7417-45ec-931c-e1c51453c2cf"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CANDLE_GENERATOR",
+        "class_name": "CandleGenerator",
+        "script_name": "webapp"
+      }
+    ]
+  },
   // Twelve Data API Key (本番環境ではwrangler secret putで設定)
   "vars": {
     "TWELVE_DATA_API_KEY": ""

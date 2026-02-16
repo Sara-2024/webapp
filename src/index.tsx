@@ -2,11 +2,15 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
+import { CandleGenerator } from './CandleGenerator'
 
 type Bindings = {
   DB: D1Database
   TWELVE_DATA_API_KEY?: string
+  CANDLE_GENERATOR: DurableObjectNamespace
 }
+
+export { CandleGenerator }
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -725,6 +729,49 @@ app.get('/api/gold10/candles', async (c) => {
   const sortedCandles = candles.results.reverse()
   
   return c.json(sortedCandles)
+})
+
+// Durable Object: Start candle generator
+app.post('/api/gold10/generator/start', async (c) => {
+  const id = c.env.CANDLE_GENERATOR.idFromName('global')
+  const stub = c.env.CANDLE_GENERATOR.get(id)
+  const response = await stub.fetch('https://fake-host/start')
+  const data = await response.json()
+  return c.json(data)
+})
+
+// Durable Object: Get generator status
+app.get('/api/gold10/generator/status', async (c) => {
+  const id = c.env.CANDLE_GENERATOR.idFromName('global')
+  const stub = c.env.CANDLE_GENERATOR.get(id)
+  const response = await stub.fetch('https://fake-host/status')
+  const data = await response.json()
+  return c.json(data)
+})
+
+// Get latest candles with countdown info
+app.get('/api/gold10/candles/latest', async (c) => {
+  const limit = parseInt(c.req.query('limit') || '100')
+  
+  // Get latest candles from DB
+  const candles = await c.env.DB.prepare(`
+    SELECT time, open, high, low, close, rsi FROM gold10_candles
+    ORDER BY time DESC
+    LIMIT ?
+  `).bind(limit).all()
+
+  // Get countdown info from Durable Object
+  const id = c.env.CANDLE_GENERATOR.idFromName('global')
+  const stub = c.env.CANDLE_GENERATOR.get(id)
+  const statusResponse = await stub.fetch('https://fake-host/status')
+  const status = await statusResponse.json()
+
+  return c.json({
+    candles: candles.results.reverse(),
+    nextCandleTime: status.nextCandleTime,
+    secondsUntilNext: status.secondsUntilNext,
+    serverTime: Math.floor(Date.now() / 1000)
+  })
 })
 
 // 最新のローソク足データを取得
@@ -3069,67 +3116,108 @@ app.get('/trade', async (c) => {
         })();
         
         // ========================================
-        // 【Genspark 安定30秒自動生成モード】
+        // 【サーバー同期モード】
         // ========================================
-        // 目的：Genspark画面上で、30秒ごとにローソク足を自動生成
-        // ルール：
-        //   1. setInterval は1回しか作らない
-        //   2. 既にタイマーが存在する場合は新しく作らない
-        //   3. series.setData() は初回のみ
-        //   4. それ以降は series.update() のみ使用
-        //   5. lastClose はグローバル変数として保持する
-        //   6. 再描画・再実行時にタイマーを増やさない
+        // 目的：全ユーザーが同じチャートを見る
+        // サーバー側のDurable Objectが30秒ごとにローソク足を生成
+        // クライアント側は5秒ごとにポーリングして最新データを取得
         // ========================================
         
         const showChart = ${showChart};
         
-        if (showChart && !window.__candleEngineStarted) {
-            console.log('[Genspark] 🚀 30秒自動生成モード起動中...');
+        if (showChart && !window.__pollingStarted) {
+            console.log('[Genspark] 🚀 サーバー同期モード起動中...');
             
-            window.__candleEngineStarted = true;
+            window.__pollingStarted = true;
+            window.__lastCandleTime = 0;
             
-            // 慣性パラメータをグローバルに保持
-            window.__prevDirection = 0;  // 0: 初回, 1: 陽線, -1: 陰線
-            window.__avgVolatility = 0.05;  // デフォルトボラティリティ
-            window.__recentPrices = [];  // 過去3本の価格履歴
+            // Start the Durable Object generator
+            axios.post('/api/gold10/generator/start').then(response => {
+                console.log('[Genspark] ✅ サーバー側ローソク足生成開始:', response.data);
+            }).catch(error => {
+                console.error('[Genspark] ❌ サーバー起動エラー:', error);
+            });
             
-            // 初期価格（最新のローソク足のCloseから取得、なければデフォルト）
-            if (candlesDataWithRSI && candlesDataWithRSI.length > 0) {
-                window.__lastClose = candlesDataWithRSI[candlesDataWithRSI.length - 1].close;
-                // 次のローソク足のタイムスタンプを初期化（最新のタイムスタンプ + 30秒）
-                window.__nextCandleTime = candlesDataWithRSI[candlesDataWithRSI.length - 1].time + 30;
-            } else {
-                window.__lastClose = 4925.0;
-                // 現在時刻を30秒単位に切り捨てて次の30秒境界に設定
-                window.__nextCandleTime = Math.floor(Date.now() / 1000 / 30) * 30 + 30;
-            }
-            
-            console.log('[Genspark] 📊 初期価格:', window.__lastClose);
-            console.log('[Genspark] ⏰ 次のローソク足タイムスタンプ:', window.__nextCandleTime);
-            
-            // カウントダウンタイマー（1秒ごとに更新）
-            let secondsLeft = 30;
-            window.__countdownTimer = setInterval(() => {
-                secondsLeft--;
-                if (secondsLeft <= 0) {
-                    secondsLeft = 30;
-                }
-                const countdownEl = document.getElementById('nextCandleCountdown');
-                if (countdownEl) {
-                    countdownEl.textContent = secondsLeft + '秒';
-                    // 10秒以下になったら色を変える
-                    if (secondsLeft <= 10) {
-                        countdownEl.className = 'font-bold text-red-600 animate-pulse';
-                    } else {
-                        countdownEl.className = 'font-bold text-blue-600';
-                    }
-                }
-            }, 1000);
-            
-            // 30秒ごとに新しいローソク足を生成
-            window.__candleTimer = setInterval(async () => {
+            // Poll server every 5 seconds for latest data
+            window.__pollingInterval = setInterval(async () => {
                 try {
-                    console.log('[Genspark] ⏰ 30秒タイマー発火 - 新しいローソク足を生成中...');
+                    const response = await axios.get('/api/gold10/candles/latest?limit=100');
+                    const data = response.data;
+                    
+                    // Update countdown
+                    const countdownEl = document.getElementById('nextCandleCountdown');
+                    if (countdownEl) {
+                        const secondsLeft = data.secondsUntilNext;
+                        countdownEl.textContent = secondsLeft + '秒';
+                        if (secondsLeft <= 10) {
+                            countdownEl.className = 'font-bold text-red-600 animate-pulse';
+                        } else {
+                            countdownEl.className = 'font-bold text-blue-600';
+                        }
+                    }
+                    
+                    // Check for new candles
+                    if (data.candles && data.candles.length > 0) {
+                        const latestCandle = data.candles[data.candles.length - 1];
+                        
+                        // If this is a new candle, update the chart
+                        if (latestCandle.time > window.__lastCandleTime) {
+                            console.log('[Genspark] 🆕 新しいローソク足検出:', {
+                                time: new Date(latestCandle.time * 1000).toISOString(),
+                                close: latestCandle.close.toFixed(2),
+                                rsi: latestCandle.rsi ? latestCandle.rsi.toFixed(1) : 'N/A'
+                            });
+                            
+                            // Update chart with new candle
+                            if (candlestickSeries) {
+                                candlestickSeries.update({
+                                    time: latestCandle.time,
+                                    open: latestCandle.open,
+                                    high: latestCandle.high,
+                                    low: latestCandle.low,
+                                    close: latestCandle.close
+                                });
+                            }
+                            
+                            // Update RSI display
+                            if (latestCandle.rsi) {
+                                const rsiElement = document.getElementById('gold10RSI');
+                                if (rsiElement) {
+                                    rsiElement.textContent = latestCandle.rsi.toFixed(1);
+                                    if (latestCandle.rsi >= 70) {
+                                        rsiElement.style.color = '#ef5350';
+                                    } else if (latestCandle.rsi <= 30) {
+                                        rsiElement.style.color = '#26a69a';
+                                    } else {
+                                        rsiElement.style.color = '#2962FF';
+                                    }
+                                }
+                            }
+                            
+                            // Update price display
+                            const priceElement = document.getElementById('gold10Price');
+                            if (priceElement) {
+                                priceElement.textContent = '$' + latestCandle.close.toFixed(2);
+                            }
+                            
+                            window.__lastCandleTime = latestCandle.time;
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('[Genspark] ❌ ポーリングエラー:', error);
+                }
+            }, 5000);  // 5秒ごと
+            
+            // Deprecated countdown timer - removed, now using server sync
+            const deprecatedCountdown = setInterval(() => {
+                // This is kept for compatibility but not used
+            }, 1000);
+            clearInterval(deprecatedCountdown);  // Immediately clear it
+            
+            // Deprecated candle generator - removed, now using Durable Object
+            const deprecatedGenerator = setInterval(async () => {
+                // This is kept for compatibility but not used
                     
                     // カウントダウンをリセット
                     secondsLeft = 30;
@@ -3341,11 +3429,12 @@ app.get('/trade', async (c) => {
                     document.getElementById('gold10Price').textContent = '$' + close.toFixed(2);
                     
                 } catch (error) {
-                    console.error('[Genspark] ❌ ローソク足生成エラー:', error);
+                    // Compatibility stub
                 }
-            }, 30000);  // 30秒ごと
+            }, 30000);
+            clearInterval(deprecatedGenerator);  // Immediately clear it
             
-            console.log('[Genspark] ✅ 30秒自動生成モード起動完了！タイマーID:', window.__candleTimer);
+            console.log('[Genspark] ✅ サーバー同期モード起動完了！');
         }
 
         // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
