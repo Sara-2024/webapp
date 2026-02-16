@@ -771,28 +771,31 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   // Generate missing candles (but limit to prevent too many at once)
   const maxToGenerate = Math.min(candlesToGenerate, 10)
   
+  let lastClose = latest.close
   for (let i = 0; i < maxToGenerate; i++) {
     const candleTime = latest.timestamp + (i + 1) * 30
-    await generateSingleCandle(db, candleTime, latest.close)
+    const newCandle = await generateSingleCandle(db, candleTime, lastClose)
+    lastClose = newCandle.close  // 次のローソク足は今のローソク足の終値から始まる
   }
 
   return true
 }
 
-async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<void> {
+async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<{close: number}> {
   const open = previousClose
 
-  // Simple random walk generation
+  // より自然なローソク足を生成（始値から変化する）
   const trendDirection = Math.random() > 0.5 ? 1 : -1
-  const trendStrength = 0.05 + Math.random() * 0.15
-  const volatility = 0.05
+  const trendStrength = 0.1 + Math.random() * 0.3  // 0.1-0.4 USD
+  const volatility = 0.05 + Math.random() * 0.1   // 0.05-0.15 USD
 
   const prices = []
   let currentPrice = open
 
+  // 10回の価格変動をシミュレート
   for (let i = 0; i < 10; i++) {
-    const trendComponent = trendDirection * trendStrength * (1 + Math.random() * 0.2)
-    const randomWalk = (Math.random() - 0.5) * volatility
+    const trendComponent = trendDirection * trendStrength
+    const randomWalk = (Math.random() - 0.5) * volatility * 2
     currentPrice = currentPrice + trendComponent + randomWalk
     prices.push(currentPrice)
   }
@@ -810,7 +813,9 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(candleTime, open, high, low, close, rsi).run()
 
-  console.log(`[Server] Generated candle at ${new Date(candleTime * 1000).toISOString()}`)
+  console.log(`[Server] Generated candle at ${new Date(candleTime * 1000).toISOString()} - Open:${open.toFixed(2)} Close:${close.toFixed(2)}`)
+  
+  return { close }  // 次のローソク足で使うためにcloseを返す
 }
 
 // Get latest candles with countdown info
@@ -832,21 +837,26 @@ app.get('/api/gold10/candles/latest', async (c) => {
   const latestCandle = candles.results[0]
   
   // 次のローソク足の時刻を計算（30秒刻み）
+  // now を 30秒単位に切り捨て → 30秒足す = 次の30秒境界
+  const next30SecBoundary = Math.floor(now / 30) * 30 + 30
+  
   let nextCandleTime
   if (latestCandle) {
     // 最新ローソク足から30秒後
     nextCandleTime = latestCandle.timestamp + 30
     
-    // もし次の時刻が過去の場合、現在時刻を30秒単位に切り上げ
+    // もし過去の場合は、次の30秒境界を使う
     if (nextCandleTime <= now) {
-      nextCandleTime = Math.ceil(now / 30) * 30
+      nextCandleTime = next30SecBoundary
     }
   } else {
-    // ローソク足がない場合、現在時刻を30秒単位に切り上げ
-    nextCandleTime = Math.ceil(now / 30) * 30
+    // ローソク足がない場合、次の30秒境界
+    nextCandleTime = next30SecBoundary
   }
   
   const secondsUntilNext = Math.max(0, nextCandleTime - now)
+  
+  console.log(`[Server] Countdown: now=${now}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
 
   return c.json({
     candles: candles.results.reverse(),
