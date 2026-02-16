@@ -2828,16 +2828,33 @@ app.get('/trade', async (c) => {
         // ユーザー側のサインマーカー読み込み
         async function loadUserSignals() {
             try {
+                console.log('[User] === loadUserSignals 開始 ===');
+                console.log('[User] candlesDataWithRSI length:', candlesDataWithRSI ? candlesDataWithRSI.length : 'undefined');
+                console.log('[User] candlestickSeries:', candlestickSeries ? 'initialized' : 'NOT initialized');
+                
                 // 最新24時間のサインを取得
                 const signalsResponse = await axios.get('/api/gold10/signals?hours=24');
                 const signals = signalsResponse.data;
                 
-                console.log('[User] サイン取得:', signals.length, '件', signals);
+                console.log('[User] サイン取得:', signals.length, '件');
+                if (signals.length > 0) {
+                    console.log('[User] 最新5件のサイン:', signals.slice(-5).map(s => ({
+                        timestamp: s.timestamp,
+                        type: s.type
+                    })));
+                }
+                
+                if (!candlesDataWithRSI || candlesDataWithRSI.length === 0) {
+                    console.error('[User] candlesDataWithRSI が空です！');
+                    return;
+                }
+                
                 console.log('[User] ローソク足データ数:', candlesDataWithRSI.length);
+                console.log('[User] ローソク足範囲:', candlesDataWithRSI[0]?.timestamp, 'to', candlesDataWithRSI[candlesDataWithRSI.length - 1]?.timestamp);
                 
                 // 表示中のローソク足のタイムスタンプセット作成
                 const candleTimestamps = new Set(candlesDataWithRSI.map(c => c.timestamp));
-                console.log('[User] ローソク足タイムスタンプ:', Array.from(candleTimestamps));
+                console.log('[User] ローソク足タイムスタンプ数:', candleTimestamps.size);
                 
                 // マーカー作成
                 const markers = signals
@@ -2845,6 +2862,8 @@ app.get('/trade', async (c) => {
                         const match = candleTimestamps.has(signal.timestamp);
                         if (!match) {
                             console.log('[User] サイン除外（ローソク足なし）:', signal.timestamp, signal.type);
+                        } else {
+                            console.log('[User] サイン一致:', signal.timestamp, signal.type);
                         }
                         return match;
                     })
@@ -2856,7 +2875,10 @@ app.get('/trade', async (c) => {
                         text: signal.type === 'BUY' ? '買い' : '売り'
                     }));
                 
-                console.log('[User] マーカー表示:', markers.length, '件', markers);
+                console.log('[User] マーカー表示:', markers.length, '件');
+                if (markers.length > 0) {
+                    console.log('[User] マーカー詳細:', markers);
+                }
                 
                 // マーカーをチャートに設定
                 if (candlestickSeries) {
@@ -2865,6 +2887,8 @@ app.get('/trade', async (c) => {
                 } else {
                     console.error('[User] candlestickSeriesが未初期化');
                 }
+                
+                console.log('[User] === loadUserSignals 完了 ===');
             } catch (error) {
                 console.error('[User] サインマーカー読み込みエラー:', error);
             }
