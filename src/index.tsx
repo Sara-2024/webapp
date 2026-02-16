@@ -1583,23 +1583,32 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
   const now = Math.floor(Date.now() / 1000)
   const candleTimestamp = Math.floor(now / 30) * 30
 
-  // 現在価格を取得
+  // 最新のローソク足を取得
   const latestCandle = await c.env.DB.prepare(`
-    SELECT close FROM gold10_candles 
+    SELECT id, close, rsi FROM gold10_candles 
     WHERE timestamp <= ?
     ORDER BY timestamp DESC 
     LIMIT 1
   `).bind(now).first()
 
-  const price = latestCandle?.close || 5000
+  if (!latestCandle) {
+    return c.json({ error: 'ローソク足データが見つかりません' }, 404)
+  }
 
-  // サインを挿入
+  const price = latestCandle.close
+  const candleId = latestCandle.id
+  const rsi = latestCandle.rsi || 50
+
+  // ターゲット価格を計算（買いなら上、売りなら下）
+  const targetPrice = type === 'BUY' ? price * 1.001 : price * 0.999
+
+  // サインを挿入（既存のテーブル構造に合わせる）
   const result = await c.env.DB.prepare(`
-    INSERT INTO gold10_signals (type, candle_timestamp, price, is_active)
-    VALUES (?, ?, ?, 1)
-  `).bind(type, candleTimestamp, price).run()
+    INSERT INTO gold10_signals (candle_id, timestamp, type, price, target_price, success, rsi)
+    VALUES (?, ?, ?, ?, ?, NULL, ?)
+  `).bind(candleId, candleTimestamp, type, price, targetPrice, rsi).run()
 
-  console.log(`[Signal Generated] ${type} at ${candleTimestamp}, price: ${price}`)
+  console.log(`[Signal Generated] ${type} at ${candleTimestamp}, price: ${price}, candle_id: ${candleId}`)
 
   return c.json({
     success: true,
@@ -1607,8 +1616,9 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
     signal: {
       id: result.meta.last_row_id,
       type,
-      candleTimestamp,
-      price
+      timestamp: candleTimestamp,
+      price,
+      candleId
     }
   })
 })
@@ -1620,8 +1630,8 @@ app.get('/api/gold10/signals', async (c) => {
 
   const { results } = await c.env.DB.prepare(`
     SELECT * FROM gold10_signals
-    WHERE candle_timestamp >= ? AND is_active = 1
-    ORDER BY candle_timestamp DESC
+    WHERE timestamp >= ?
+    ORDER BY timestamp DESC
   `).bind(cutoffTime).all()
 
   return c.json(results)
@@ -2713,10 +2723,10 @@ app.get('/trade', async (c) => {
                     const displayStartTime = candleData[Math.max(0, candleData.length - 100)].time;
                     
                     // 表示範囲内のサインのみフィルタリング（左端にサインが溜まらないように）
-                    const visibleSignals = signals.filter(signal => signal.candle_timestamp >= displayStartTime);
+                    const visibleSignals = signals.filter(signal => signal.timestamp >= displayStartTime);
                     
                     const markers = visibleSignals.map(signal => ({
-                        time: signal.candle_timestamp,
+                        time: signal.timestamp,
                         position: signal.type === 'BUY' ? 'belowBar' : 'aboveBar',
                         color: signal.type === 'BUY' ? '#26a69a' : '#ef5350',
                         shape: signal.type === 'BUY' ? 'arrowUp' : 'arrowDown',
