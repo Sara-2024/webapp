@@ -3096,11 +3096,16 @@ app.get('/trade', async (c) => {
             // 初期価格（最新のローソク足のCloseから取得、なければデフォルト）
             if (candlesDataWithRSI && candlesDataWithRSI.length > 0) {
                 window.__lastClose = candlesDataWithRSI[candlesDataWithRSI.length - 1].close;
+                // 次のローソク足のタイムスタンプを初期化（最新のタイムスタンプ + 30秒）
+                window.__nextCandleTime = candlesDataWithRSI[candlesDataWithRSI.length - 1].time + 30;
             } else {
                 window.__lastClose = 4925.0;
+                // 現在時刻を30秒単位に切り捨てて次の30秒境界に設定
+                window.__nextCandleTime = Math.floor(Date.now() / 1000 / 30) * 30 + 30;
             }
             
             console.log('[Genspark] 📊 初期価格:', window.__lastClose);
+            console.log('[Genspark] ⏰ 次のローソク足タイムスタンプ:', window.__nextCandleTime);
             
             // カウントダウンタイマー（1秒ごとに更新）
             let secondsLeft = 30;
@@ -3198,14 +3203,19 @@ app.get('/trade', async (c) => {
                     const high = Math.max(open, close, ...prices);
                     const low = Math.min(open, close, ...prices);
                     
-                    // ローソク足データ
+                    // ローソク足データ（重複しないタイムスタンプを使用）
                     const bar = {
-                        time: Math.floor(Date.now() / 1000),
+                        time: window.__nextCandleTime,
                         open: open,
                         high: high,
                         low: low,
                         close: close,
                     };
+                    
+                    // 次のローソク足のタイムスタンプを30秒進める
+                    window.__nextCandleTime += 30;
+                    
+                    console.log('[Genspark] 🕐 ローソク足タイムスタンプ:', bar.time, new Date(bar.time * 1000).toISOString());
                     
                     // candlesDataWithRSI に追加（RSI計算用）
                     candlesDataWithRSI.push({
