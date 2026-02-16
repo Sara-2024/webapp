@@ -913,6 +913,7 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   }
 
   // 最小変動幅を強制（平らなローソク足を防ぐ）
+  // 最大変動制限後に確認し、必要に応じて調整
   const range = high - low
   if (range < minVolatility) {
     // 変動幅が小さすぎる場合、強制的に広げる
@@ -928,6 +929,16 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     }
     
     console.log(`[Server] Adjusted flat candle: range was ${range.toFixed(2)}, adjusted to ${(high - low).toFixed(2)}`)
+  }
+  
+  // 最終確認: rangeが小さすぎる場合（0.1ドル未満）は強制調整
+  const finalRange = high - low
+  if (finalRange < 1.0) {
+    // 最小1ドルの変動を保証
+    const needAdjustment = (1.0 - finalRange) / 2
+    high = high + needAdjustment
+    low = low - needAdjustment
+    console.log(`[Server] Final range adjustment: ${finalRange.toFixed(2)} -> ${(high - low).toFixed(2)}`)
   }
 
   // Calculate RSI (simplified - just use 50 for now)
