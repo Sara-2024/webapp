@@ -2894,94 +2894,6 @@ app.get('/trade', async (c) => {
             }
         }
         
-        // GOLD10チャート更新
-        async function updateGold10Chart() {
-            try {
-                // 最新のローソク足データを取得（最後の2本）
-                const response = await axios.get('/api/gold10/candles?limit=2');
-                const candles = response.data;
-
-                if (candles && candles.length > 0) {
-                    // タイムスタンプでソート（古い順）
-                    candles.sort((a, b) => a.timestamp - b.timestamp);
-                    
-                    // 各ローソク足を update() で追加/更新
-                    for (const candle of candles) {
-                        // 【重要】新しい足を追加する前に Next_Open = Previous_Close を強制
-                        if (candle.timestamp > lastCandleTimestamp) {
-                            // 新しい足の場合、前の足のCloseを取得
-                            const prevCandle = candlesDataWithRSI[candlesDataWithRSI.length - 1];
-                            if (prevCandle && Math.abs(candle.open - prevCandle.close) > 0.000001) {
-                                // Openを強制的に前足のCloseに修正
-                                candle.open = prevCandle.close;
-                                console.log('[固定モード] Next_Open = Previous_Close を強制: $' + candle.open.toFixed(2));
-                            }
-                            lastCandleTimestamp = candle.timestamp;
-                        }
-                        
-                        // update()でローソク足を追加/更新
-                        candlestickSeries.update({
-                            time: candle.timestamp,
-                            open: candle.open,
-                            high: candle.high,
-                            low: candle.low,
-                            close: candle.close
-                        });
-
-                        // RSIデータを含むローソク足データを更新
-                        const existingIndex = candlesDataWithRSI.findIndex(c => c.timestamp === candle.timestamp);
-                        if (existingIndex >= 0) {
-                            candlesDataWithRSI[existingIndex] = candle;
-                        } else {
-                            candlesDataWithRSI.push(candle);
-                        }
-                    }
-                    
-                    // 最新のローソク足を取得
-                    const latestCandle = candles[candles.length - 1];
-                    
-                    // MACDデータを再計算して update() で更新
-                    const macdData = calculateMACD(candlesDataWithRSI);
-                    const latestMACD = macdData[macdData.length - 1];
-                    
-                    if (latestMACD) {
-                        macdLineSeries.update({ time: latestMACD.time, value: latestMACD.macd });
-                        macdSignalSeries.update({ time: latestMACD.time, value: latestMACD.signal });
-                        macdHistogramSeries.update({ 
-                            time: latestMACD.time, 
-                            value: latestMACD.histogram,
-                            color: latestMACD.histogram >= 0 ? '#26a69a' : '#ef5350'
-                        });
-                    }
-
-                    // 現在価格とRSI表示を更新
-                    document.getElementById('gold10Price').textContent = 
-                        '$' + latestCandle.close.toFixed(2);
-                    document.getElementById('gold10RSI').textContent = 
-                        latestCandle.rsi ? latestCandle.rsi.toFixed(1) : '--';
-                    
-                    // RSI色分け
-                    const rsiEl = document.getElementById('gold10RSI');
-                    if (latestCandle.rsi >= 70) {
-                        rsiEl.className = 'text-2xl font-bold text-red-600';
-                    } else if (latestCandle.rsi <= 30) {
-                        rsiEl.className = 'text-2xl font-bold text-green-600';
-                    } else {
-                        rsiEl.className = 'text-2xl font-bold text-blue-600';
-                    }
-                    
-                    // currentPriceもGOLD10価格に更新
-                    currentPrice = latestCandle.close;
-                }
-                
-                // サインマーカーを取得して表示
-                await loadUserSignals();
-
-            } catch (error) {
-                console.error('チャート更新エラー:', error);
-            }
-        }
-
         // ========== 既存のトレード機能 ==========
         let currentPrice = 0;
         let openPositions = [];
@@ -3409,15 +3321,21 @@ app.get('/trade', async (c) => {
                                 rsi: latestCandle.rsi ? latestCandle.rsi.toFixed(1) : 'N/A'
                             });
                             
-                            // Update chart with new candle
+                            // 新しいローソク足のみチャートに追加（既存は更新しない）
                             if (candlestickSeries) {
-                                candlestickSeries.update({
-                                    time: latestCandle.timestamp,
-                                    open: latestCandle.open,
-                                    high: latestCandle.high,
-                                    low: latestCandle.low,
-                                    close: latestCandle.close
-                                });
+                                const alreadyExists = candlesDataWithRSI.some(c => c.timestamp === latestCandle.timestamp);
+                                if (!alreadyExists) {
+                                    candlestickSeries.update({
+                                        time: latestCandle.timestamp,
+                                        open: latestCandle.open,
+                                        high: latestCandle.high,
+                                        low: latestCandle.low,
+                                        close: latestCandle.close
+                                    });
+                                    console.log('[Genspark] ✅ 新しいローソク足をチャートに追加:', latestCandle.timestamp);
+                                } else {
+                                    console.log('[Genspark] ⏭️ ローソク足は既に存在（スキップ）:', latestCandle.timestamp);
+                                }
                             }
                             
                             // Update RSI display
@@ -3472,8 +3390,7 @@ app.get('/trade', async (c) => {
             // 最新のGOLD10価格を取得して表示を更新
             await updateGoldPrice();
             
-            // チャート更新は5秒ごとのポーリングに任せる（updateGold10Chartは呼ばない）
-            // if (showChart) await updateGold10Chart(); // ❌ これがエラーの原因
+            // チャート更新は5秒ごとのポーリングで自動実行
             
             // 15分経過ポジションの自動決済チェック
             try {
