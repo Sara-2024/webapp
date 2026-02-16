@@ -810,12 +810,13 @@ app.get('/api/gold10/candles', async (c) => {
 async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000)
   
-  // Get the latest candle
+  // 🔒 現在時刻以前の最新ローソク足を取得（未来のローソク足は除外）
   const latest = await db.prepare(`
     SELECT timestamp, close FROM gold10_candles 
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC 
     LIMIT 1
-  `).first()
+  `).bind(now).first()
 
   if (!latest) {
     return false
@@ -887,16 +888,18 @@ app.get('/api/gold10/candles/latest', async (c) => {
   
   const limit = parseInt(c.req.query('limit') || '100')
   
-  // Get latest candles from DB
+  // 🔒 現在時刻以前のローソク足のみを取得（未来のローソク足は除外）
+  const now = Math.floor(Date.now() / 1000)
   const candles = await c.env.DB.prepare(`
     SELECT timestamp, open, high, low, close, rsi FROM gold10_candles
+    WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT ?
-  `).bind(limit).all()
+  `).bind(now, limit).all()
 
   // Calculate countdown
-  const now = Math.floor(Date.now() / 1000)
-  const latestCandle = candles.results[0]
+  // 🔒 現在時刻以前の最新ローソク足のみを取得（未来のローソク足は除外）
+  const latestCandle = candles.results[0]  // すでにクエリでフィルタ済み
   
   // 次のローソク足の時刻を計算（30秒刻み）
   // now を 30秒単位に切り捨て → 30秒足す = 次の30秒境界
@@ -904,10 +907,10 @@ app.get('/api/gold10/candles/latest', async (c) => {
   
   let nextCandleTime
   if (latestCandle) {
-    // 最新ローソク足から30秒後
+    // 最新ローソク足（過去または現在）から30秒後
     nextCandleTime = latestCandle.timestamp + 30
     
-    // もし過去の場合は、次の30秒境界を使う
+    // もし計算結果が過去の場合は、次の30秒境界を使う
     if (nextCandleTime <= now) {
       nextCandleTime = next30SecBoundary
     }
@@ -918,7 +921,7 @@ app.get('/api/gold10/candles/latest', async (c) => {
   
   const secondsUntilNext = Math.max(0, nextCandleTime - now)
   
-  console.log(`[Server] Countdown: now=${now}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
+  console.log(`[Server] Countdown: now=${now}, latestCandle=${latestCandle?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
 
   return c.json({
     candles: candles.results.reverse(),
