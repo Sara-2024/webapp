@@ -2749,7 +2749,7 @@ app.get('/trade', async (c) => {
                     // RSI値を表示
                     const data = param.seriesData.get(candlestickSeries);
                     if (data && window.candlesDataWithRSI) {
-                        const candle = window.candlesDataWithRSI.find(c => c.time === param.time);
+                        const candle = window.candlesDataWithRSI.find(c => c.timestamp === param.time);
                         if (candle && candle.rsi !== undefined) {
                             const rsiElement = document.getElementById('gold10RSI');
                             if (rsiElement) {
