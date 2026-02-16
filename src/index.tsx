@@ -3531,6 +3531,31 @@ app.get('/trade', async (c) => {
                     if (data.candles && data.candles.length > 0) {
                         const latestCandle = data.candles[data.candles.length - 1];
                         
+                        // 【常にRSIと価格を更新】
+                        // Update RSI display
+                        if (latestCandle.rsi) {
+                            const rsiElement = document.getElementById('gold10RSI');
+                            if (rsiElement) {
+                                rsiElement.textContent = latestCandle.rsi.toFixed(1);
+                                if (latestCandle.rsi >= 70) {
+                                    rsiElement.style.color = '#ef5350';
+                                } else if (latestCandle.rsi <= 30) {
+                                    rsiElement.style.color = '#26a69a';
+                                } else {
+                                    rsiElement.style.color = '#2962FF';
+                                }
+                            }
+                        }
+                        
+                        // Update price display
+                        const priceElement = document.getElementById('gold10Price');
+                        if (priceElement) {
+                            priceElement.textContent = '$' + latestCandle.close.toFixed(2);
+                        }
+                        
+                        // Update currentPrice for trading
+                        currentPrice = latestCandle.close;
+                        
                         // If this is a new candle, update the chart
                         if (latestCandle.timestamp > window.__lastCandleTime) {
                             console.log('[Genspark] 🆕 新しいローソク足検出:', {
@@ -3555,30 +3580,6 @@ app.get('/trade', async (c) => {
                                     console.log('[Genspark] ⏭️ ローソク足は既に存在（スキップ）:', latestCandle.timestamp);
                                 }
                             }
-                            
-                            // Update RSI display
-                            if (latestCandle.rsi) {
-                                const rsiElement = document.getElementById('gold10RSI');
-                                if (rsiElement) {
-                                    rsiElement.textContent = latestCandle.rsi.toFixed(1);
-                                    if (latestCandle.rsi >= 70) {
-                                        rsiElement.style.color = '#ef5350';
-                                    } else if (latestCandle.rsi <= 30) {
-                                        rsiElement.style.color = '#26a69a';
-                                    } else {
-                                        rsiElement.style.color = '#2962FF';
-                                    }
-                                }
-                            }
-                            
-                            // Update price display
-                            const priceElement = document.getElementById('gold10Price');
-                            if (priceElement) {
-                                priceElement.textContent = '$' + latestCandle.close.toFixed(2);
-                            }
-                            
-                            // Update currentPrice for trading
-                            currentPrice = latestCandle.close;
                             
                             window.__lastCandleTime = latestCandle.timestamp;
                             
