@@ -1610,6 +1610,22 @@ app.post('/api/admin/users', async (c) => {
   })
 })
 
+// ユーザー一覧取得
+app.get('/api/admin/users', async (c) => {
+  const adminId = getCookie(c, 'admin_id')
+  if (!adminId) {
+    return c.json({ error: '管理者権限が必要です' }, 403)
+  }
+
+  const users = await c.env.DB.prepare(`
+    SELECT id, username, password, balance, total_profit, total_trades, points, created_at
+    FROM users
+    ORDER BY created_at DESC
+  `).all()
+
+  return c.json(users.results)
+})
+
 // 動画追加
 app.post('/api/admin/videos', async (c) => {
   const adminId = getCookie(c, 'admin_id')
@@ -4761,6 +4777,7 @@ app.get('/admin', (c) => {
             } else if (tab === 'users') {
                 document.getElementById('usersPanel').classList.remove('hidden');
                 document.getElementById('usersTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
+                loadUsers();
             } else if (tab === 'videos') {
                 document.getElementById('videosPanel').classList.remove('hidden');
                 document.getElementById('videosTab').className = 'flex-1 bg-red-500 text-white font-bold py-3 rounded-lg shadow';
