@@ -3136,14 +3136,21 @@ app.get('/trade', async (c) => {
                     const targetVolatility = window.__avgVolatility * (0.8 + Math.random() * 0.4);
                     const volatility = Math.max(0.02, Math.min(0.15, targetVolatility));
                     
-                    // 30秒区間の価格を生成（簡易版：3ポイント）
+                    // 30秒区間の価格を生成（簡易版：10ポイント）
                     const prices = [];
                     let currentPrice = open;
                     
+                    // 動的なMean Reversion基準価格（過去5本の平均、なければ現在価格）
+                    const meanReversionTarget = window.__recentPrices.length >= 3 
+                        ? window.__recentPrices.reduce((a, b) => a + b, 0) / window.__recentPrices.length
+                        : open;
+                    
                     for (let i = 0; i < 10; i++) {
-                        const meanReversion = (4925 - currentPrice) * 0.001;
+                        // 平均回帰は動的な基準価格に対して、より弱く（0.0005倍）
+                        const meanReversion = (meanReversionTarget - currentPrice) * 0.0005;
                         const progress = i / 10;
                         
+                        // 加速係数（初期70-100%、中盤100-120%、終盤70-100%）
                         let accelerationFactor = 1.0;
                         if (progress < 0.3) {
                             accelerationFactor = 0.7 + progress;
@@ -3153,7 +3160,8 @@ app.get('/trade', async (c) => {
                             accelerationFactor = 1.0 + (progress - 0.3) * 0.5;
                         }
                         
-                        const trendComponent = trendDirection * trendStrength * accelerationFactor / 10;
+                        // トレンド成分を強化（/10 を削除）
+                        const trendComponent = trendDirection * trendStrength * accelerationFactor;
                         const randomWalk = (Math.random() - 0.5) * volatility;
                         
                         currentPrice = currentPrice + meanReversion + trendComponent + randomWalk;
@@ -3173,6 +3181,90 @@ app.get('/trade', async (c) => {
                         close: close,
                     };
                     
+                    // candlesDataWithRSI に追加（RSI計算用）
+                    candlesDataWithRSI.push({
+                        time: bar.time,
+                        open: bar.open,
+                        high: bar.high,
+                        low: bar.low,
+                        close: bar.close,
+                        rsi: 50  // 仮の値、後で計算
+                    });
+                    
+                    // 最新100本のみ保持（メモリ節約）
+                    if (candlesDataWithRSI.length > 100) {
+                        candlesDataWithRSI.shift();
+                    }
+                    
+                    // RSI計算（過去14本以上ある場合）
+                    if (candlesDataWithRSI.length >= 15) {
+                        const recentCandles = candlesDataWithRSI.slice(-15);
+                        let gains = 0;
+                        let losses = 0;
+                        
+                        for (let i = 1; i < recentCandles.length; i++) {
+                            const change = recentCandles[i].close - recentCandles[i - 1].close;
+                            if (change > 0) {
+                                gains += change;
+                            } else {
+                                losses += Math.abs(change);
+                            }
+                        }
+                        
+                        const avgGain = gains / 14;
+                        const avgLoss = losses / 14;
+                        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                        const rsi = 100 - (100 / (1 + rs));
+                        
+                        // 最新のローソク足にRSIを設定
+                        candlesDataWithRSI[candlesDataWithRSI.length - 1].rsi = rsi;
+                        
+                        // RSI表示を更新
+                        const rsiElement = document.getElementById('gold10RSI');
+                        if (rsiElement) {
+                            rsiElement.textContent = rsi.toFixed(1);
+                            // 色分け: 70以上=赤、30以下=緑、その他=青
+                            if (rsi >= 70) {
+                                rsiElement.style.color = '#ef5350';
+                            } else if (rsi <= 30) {
+                                rsiElement.style.color = '#26a69a';
+                            } else {
+                                rsiElement.style.color = '#2962FF';
+                            }
+                        }
+                    }
+                    
+                    // MACD計算と更新
+                    if (candlesDataWithRSI.length >= 26) {
+                        const macdData = calculateMACD(candlesDataWithRSI);
+                        const latestMACD = macdData[macdData.length - 1];
+                        
+                        if (latestMACD && macdLineSeries && macdSignalSeries && macdHistogramSeries) {
+                            // MACD Line
+                            macdLineSeries.update({
+                                time: bar.time,
+                                value: latestMACD.macd
+                            });
+                            
+                            // Signal Line
+                            if (latestMACD.signal !== null) {
+                                macdSignalSeries.update({
+                                    time: bar.time,
+                                    value: latestMACD.signal
+                                });
+                            }
+                            
+                            // Histogram
+                            if (latestMACD.histogram !== null) {
+                                macdHistogramSeries.update({
+                                    time: bar.time,
+                                    value: latestMACD.histogram,
+                                    color: latestMACD.histogram >= 0 ? '#26a69a' : '#ef5350'
+                                });
+                            }
+                        }
+                    }
+                    
                     // 【Lightweight Charts 固定モード】update() のみ使用
                     if (candlestickSeries) {
                         candlestickSeries.update(bar);
@@ -3181,7 +3273,8 @@ app.get('/trade', async (c) => {
                             open: bar.open.toFixed(2),
                             high: bar.high.toFixed(2),
                             low: bar.low.toFixed(2),
-                            close: bar.close.toFixed(2)
+                            close: bar.close.toFixed(2),
+                            rsi: candlesDataWithRSI[candlesDataWithRSI.length - 1].rsi?.toFixed(1) || 'N/A'
                         });
                     }
                     
