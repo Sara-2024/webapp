@@ -733,8 +733,8 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   
   // Get the latest candle
   const latest = await db.prepare(`
-    SELECT time, close FROM gold10_candles 
-    ORDER BY time DESC 
+    SELECT timestamp, close FROM gold10_candles 
+    ORDER BY timestamp DESC 
     LIMIT 1
   `).first()
 
@@ -743,7 +743,7 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   }
 
   // Check if we need to generate a new candle (30+ seconds since last)
-  const timeSinceLast = now - latest.time
+  const timeSinceLast = now - latest.timestamp
   if (timeSinceLast < 30) {
     return false
   }
@@ -755,7 +755,7 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   const maxToGenerate = Math.min(candlesToGenerate, 10)
   
   for (let i = 0; i < maxToGenerate; i++) {
-    const candleTime = latest.time + (i + 1) * 30
+    const candleTime = latest.timestamp + (i + 1) * 30
     await generateSingleCandle(db, candleTime, latest.close)
   }
 
@@ -789,7 +789,7 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
 
   // Save to DB
   await db.prepare(`
-    INSERT OR IGNORE INTO gold10_candles (time, open, high, low, close, rsi)
+    INSERT OR IGNORE INTO gold10_candles (timestamp, open, high, low, close, rsi)
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(candleTime, open, high, low, close, rsi).run()
 
@@ -805,15 +805,15 @@ app.get('/api/gold10/candles/latest', async (c) => {
   
   // Get latest candles from DB
   const candles = await c.env.DB.prepare(`
-    SELECT time, open, high, low, close, rsi FROM gold10_candles
-    ORDER BY time DESC
+    SELECT timestamp, open, high, low, close, rsi FROM gold10_candles
+    ORDER BY timestamp DESC
     LIMIT ?
   `).bind(limit).all()
 
   // Calculate countdown
   const now = Math.floor(Date.now() / 1000)
   const latestCandle = candles.results[0]
-  const nextCandleTime = latestCandle ? latestCandle.time + 30 : now + 30
+  const nextCandleTime = latestCandle ? latestCandle.timestamp + 30 : now + 30
   const secondsUntilNext = Math.max(0, nextCandleTime - now)
 
   return c.json({
@@ -3207,9 +3207,9 @@ app.get('/trade', async (c) => {
                         const latestCandle = data.candles[data.candles.length - 1];
                         
                         // If this is a new candle, update the chart
-                        if (latestCandle.time > window.__lastCandleTime) {
+                        if (latestCandle.timestamp > window.__lastCandleTime) {
                             console.log('[Genspark] 🆕 新しいローソク足検出:', {
-                                time: new Date(latestCandle.time * 1000).toISOString(),
+                                time: new Date(latestCandle.timestamp * 1000).toISOString(),
                                 close: latestCandle.close.toFixed(2),
                                 rsi: latestCandle.rsi ? latestCandle.rsi.toFixed(1) : 'N/A'
                             });
@@ -3217,7 +3217,7 @@ app.get('/trade', async (c) => {
                             // Update chart with new candle
                             if (candlestickSeries) {
                                 candlestickSeries.update({
-                                    time: latestCandle.time,
+                                    time: latestCandle.timestamp,
                                     open: latestCandle.open,
                                     high: latestCandle.high,
                                     low: latestCandle.low,
@@ -3246,7 +3246,10 @@ app.get('/trade', async (c) => {
                                 priceElement.textContent = '$' + latestCandle.close.toFixed(2);
                             }
                             
-                            window.__lastCandleTime = latestCandle.time;
+                            // Update currentPrice for trading
+                            currentPrice = latestCandle.close;
+                            
+                            window.__lastCandleTime = latestCandle.timestamp;
                         }
                     }
                     
