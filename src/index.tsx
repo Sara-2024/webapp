@@ -1219,7 +1219,7 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   }
   
   // 30秒区間の1秒ごと価格を生成（内部計算用）
-  const prices: number[] = []
+  const prices: number[] = [basePrice] // openを最初に追加
   let currentPrice = basePrice
   
   // 【慣性導入】トレンド方向を前足の方向に従う確率を持たせる（60-70%）
@@ -1291,10 +1291,10 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   }
   
   // 30秒足の四本値を計算
-  const open = basePrice // Next_Open = Previous_Close
+  const open = basePrice // Next_Open = Previous_Close（前のcloseと完全一致）
   const close = prices[prices.length - 1]
-  const high = Math.max(...prices)
-  const low = Math.min(...prices)
+  const high = Math.max(open, close, ...prices) // open, close, 全pricesの最大値
+  const low = Math.min(open, close, ...prices)  // open, close, 全pricesの最小値
   
   // DBに保存
   const insertResult = await c.env.DB.prepare(`
