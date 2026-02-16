@@ -866,27 +866,47 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
 async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<{close: number}> {
   const open = previousClose
 
-  // より小さな価格変動に調整（5-10分で最大3万円の利益目標、利益率1/10）
-  // 3万円 ÷ 1,529.6円/ドル = 19.6ドル必要
-  // しかし変動を抑えるため、10-20本で最大2ドル変動に設定 → 最大3万円
+  // 最小変動幅を保証（0.1% = 5ドル程度）
+  const minVolatilityPercent = 0.001  // 0.1%
+  const minVolatility = open * minVolatilityPercent
+  
+  // ボラティリティ設定（0.5% ～ 2.0%）
   const trendDirection = Math.random() > 0.5 ? 1 : -1
-  const trendStrength = 0.005 + Math.random() * 0.015  // 0.005-0.020 USD
-  const volatility = 0.005 + Math.random() * 0.015   // 0.005-0.020 USD
+  const volatilityPercent = 0.005 + Math.random() * 0.015  // 0.5% ~ 2.0%
+  const volatility = open * volatilityPercent
 
   const prices = []
   let currentPrice = open
 
   // 10回の価格変動をシミュレート
   for (let i = 0; i < 10; i++) {
-    const trendComponent = trendDirection * trendStrength
+    const trendComponent = trendDirection * volatility * 0.1
     const randomWalk = (Math.random() - 0.5) * volatility * 2
     currentPrice = currentPrice + trendComponent + randomWalk
     prices.push(currentPrice)
   }
 
-  const close = prices[prices.length - 1]
-  const high = Math.max(open, close, ...prices)
-  const low = Math.min(open, close, ...prices)
+  let close = prices[prices.length - 1]
+  let high = Math.max(open, close, ...prices)
+  let low = Math.min(open, close, ...prices)
+
+  // 最小変動幅を強制（平らなローソク足を防ぐ）
+  const range = high - low
+  if (range < minVolatility) {
+    // 変動幅が小さすぎる場合、強制的に広げる
+    const adjustment = (minVolatility - range) / 2
+    high = high + adjustment
+    low = low - adjustment
+    
+    // closeも調整（トレンド方向に合わせる）
+    if (trendDirection > 0) {
+      close = open + minVolatility * 0.5  // 上昇
+    } else {
+      close = open - minVolatility * 0.5  // 下降
+    }
+    
+    console.log(`[Server] Adjusted flat candle: range was ${range.toFixed(2)}, adjusted to ${(high - low).toFixed(2)}`)
+  }
 
   // Calculate RSI (simplified - just use 50 for now)
   const rsi = 50
@@ -897,7 +917,7 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(candleTime, open, high, low, close, rsi).run()
 
-  console.log(`[Server] Generated candle at ${new Date(candleTime * 1000).toISOString()} - Open:${open.toFixed(2)} Close:${close.toFixed(2)}`)
+  console.log(`[Server] Generated candle at ${new Date(candleTime * 1000).toISOString()} - Open:${open.toFixed(2)} High:${high.toFixed(2)} Low:${low.toFixed(2)} Close:${close.toFixed(2)} Range:${(high-low).toFixed(2)}`)
   
   return { close }  // 次のローソク足で使うためにcloseを返す
 }
@@ -1299,6 +1319,21 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
     return c.json({ error: 'ローソク足データがありません' }, 400)
   }
 
+  // 平らなローソク足（ボラティリティが低い）を検出
+  const candleRange = latestCandle.high - latestCandle.low
+  const minRange = latestCandle.close * 0.0005  // 0.05% 以上の変動が必要
+  
+  if (candleRange < minRange) {
+    return c.json({ 
+      error: 'ボラティリティが低すぎるため、サインを生成できません。次のローソク足を待ってください。',
+      details: {
+        range: candleRange.toFixed(2),
+        minRequired: minRange.toFixed(2),
+        message: '現在のローソク足は価格変動が小さすぎます（十字線/Doji）'
+      }
+    }, 400)
+  }
+
   // RSIを取得（なければ50とする）
   const rsi = latestCandle.rsi || 50
 
@@ -1337,6 +1372,8 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
   // 次のローソク足生成時に価格調整が反映されるようにフラグを設定（簡易実装）
   // 実際の価格調整は次回のgenerateCandleで行う
 
+  console.log(`[Admin] Signal generated: ${type} at ${price.toFixed(2)}, range: ${candleRange.toFixed(2)}`)
+
   return c.json({
     success: true,
     signal: {
@@ -1344,7 +1381,8 @@ app.post('/api/admin/gold10/generate-signal', async (c) => {
       price,
       target_price,
       timestamp: latestCandle.timestamp,
-      success
+      success,
+      candleRange: candleRange.toFixed(2)
     },
     message: `${type === 'BUY' ? '買い' : '売り'}サインを生成しました`
   })
