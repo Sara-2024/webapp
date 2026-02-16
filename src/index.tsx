@@ -5060,8 +5060,6 @@ app.get('/admin', (c) => {
             }
             */
         }
-            }
-        }
 
         // 予約サイン一覧を読み込み
         async function loadReservedSignals() {
