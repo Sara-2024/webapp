@@ -878,10 +878,11 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   const prices = []
   let currentPrice = open
 
-  // 10回の価格変動をシミュレート
+  // 10回の価格変動をシミュレート（より穏やかな変動）
   for (let i = 0; i < 10; i++) {
     const trendComponent = trendDirection * volatility * 0.1
-    const randomWalk = (Math.random() - 0.5) * volatility * 2
+    // ランダムウォークの振幅を大幅に削減（0.3倍）
+    const randomWalk = (Math.random() - 0.5) * volatility * 0.3
     currentPrice = currentPrice + trendComponent + randomWalk
     prices.push(currentPrice)
   }
@@ -889,6 +890,27 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   let close = prices[prices.length - 1]
   let high = Math.max(open, close, ...prices)
   let low = Math.min(open, close, ...prices)
+  
+  // 過度な変動を制限（最大変動幅を2.5%に制限）
+  const maxChangePercent = 0.025  // 2.5%
+  const maxChange = open * maxChangePercent
+  
+  if (Math.abs(close - open) > maxChange) {
+    // closeが過度に変動している場合は制限
+    if (close > open) {
+      close = open + maxChange
+    } else {
+      close = open - maxChange
+    }
+  }
+  
+  // high/lowも制限
+  if (high > open + maxChange) {
+    high = open + maxChange
+  }
+  if (low < open - maxChange) {
+    low = open - maxChange
+  }
 
   // 最小変動幅を強制（平らなローソク足を防ぐ）
   const range = high - low
