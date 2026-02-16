@@ -941,14 +941,27 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     console.log(`[Server] Final range adjustment: ${finalRange.toFixed(2)} -> ${(high - low).toFixed(2)}`)
   }
 
-  // Calculate RSI (simplified - just use 50 for now)
-  const rsi = 50
-
-  // Save to DB
+  // Save to DB first (without RSI)
   await db.prepare(`
     INSERT OR IGNORE INTO gold10_candles (timestamp, open, high, low, close, rsi)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).bind(candleTime, open, high, low, close, rsi).run()
+  `).bind(candleTime, open, high, low, close, 50).run()
+  
+  // Calculate RSI using past 15 candles
+  const recentCandles = await db.prepare(`
+    SELECT * FROM gold10_candles
+    WHERE timestamp <= ?
+    ORDER BY timestamp DESC
+    LIMIT 15
+  `).bind(candleTime).all()
+  
+  const candlesForRSI = (recentCandles.results as Candle[]).reverse()
+  const rsi = calculateRSI(candlesForRSI, 14)
+  
+  // Update RSI
+  await db.prepare(`
+    UPDATE gold10_candles SET rsi = ? WHERE timestamp = ?
+  `).bind(rsi, candleTime).run()
 
   console.log(`[Server] Generated candle at ${new Date(candleTime * 1000).toISOString()} - Open:${open.toFixed(2)} High:${high.toFixed(2)} Low:${low.toFixed(2)} Close:${close.toFixed(2)} Range:${(high-low).toFixed(2)}`)
   
