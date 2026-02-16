@@ -1681,7 +1681,7 @@ app.get('/', (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
@@ -1769,7 +1769,7 @@ app.get('/admin-login', (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
@@ -2006,7 +2006,7 @@ app.get('/trade', async (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
@@ -3368,7 +3368,7 @@ app.get('/mypage', (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
@@ -3579,7 +3579,7 @@ app.get('/ranking', (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
@@ -3803,7 +3803,7 @@ app.get('/videos', (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
@@ -4159,7 +4159,7 @@ app.get('/chat', (c) => {
         <div class="container mx-auto flex items-center justify-center">
             <i class="fas fa-exclamation-triangle mr-2 text-xl"></i>
             <span class="font-bold text-sm sm:text-base">
-                メンテナンスのお知らせ：日本時間 2月16日(日) 14:00までメンテナンス実施中
+                メンテナンスのお知らせ：日本時間 2月16日(月) 15:00までメンテナンス実施中
             </span>
         </div>
     </div>
