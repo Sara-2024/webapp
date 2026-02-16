@@ -5084,6 +5084,9 @@ app.get('/admin', (c) => {
                 alert(response.data.message);
                 loadSystemInfo(); // 統計を更新
                 
+                // GOLD10チャートタブに自動切り替え
+                showTab('chart');
+                
                 // チャートにサインマーカーを即座に反映
                 const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
                 await loadAdminSignals(candlesResponse.data);
