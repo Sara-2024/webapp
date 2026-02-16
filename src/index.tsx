@@ -3472,8 +3472,8 @@ app.get('/trade', async (c) => {
             // 最新のGOLD10価格を取得して表示を更新
             await updateGoldPrice();
             
-            // チャートも更新（ローソク足の途中経過を反映）
-            if (showChart) await updateGold10Chart();
+            // チャート更新は5秒ごとのポーリングに任せる（updateGold10Chartは呼ばない）
+            // if (showChart) await updateGold10Chart(); // ❌ これがエラーの原因
             
             // 15分経過ポジションの自動決済チェック
             try {
