@@ -870,8 +870,36 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   const minVolatilityPercent = 0.001  // 0.1%
   const minVolatility = open * minVolatilityPercent
   
+  // 🔥 累積価格変動の監視と自動反転（直近10本のローソク足）
+  const recentCandles = await db.prepare(`
+    SELECT open, close FROM gold10_candles 
+    WHERE timestamp < ?
+    ORDER BY timestamp DESC 
+    LIMIT 10
+  `).bind(candleTime).all()
+  
+  // 直近10本の累積変動率を計算
+  let cumulativeChange = 0
+  if (recentCandles.results && recentCandles.results.length > 0) {
+    const oldest = recentCandles.results[recentCandles.results.length - 1]
+    const newest = recentCandles.results[0]
+    cumulativeChange = ((newest.close - oldest.open) / oldest.open) * 100  // %
+  }
+  
+  // トレンド方向の決定
+  // 累積変動が+3%以上なら80%の確率で下降、-3%以下なら80%の確率で上昇
+  // それ以外は50%の確率でランダム
+  let trendDirection = Math.random() > 0.5 ? 1 : -1
+  
+  if (cumulativeChange > 3.0) {
+    // 過度な上昇 → 下降方向へ誘導
+    trendDirection = Math.random() < 0.8 ? -1 : 1
+  } else if (cumulativeChange < -3.0) {
+    // 過度な下降 → 上昇方向へ誘導
+    trendDirection = Math.random() < 0.8 ? 1 : -1
+  }
+  
   // ボラティリティ設定（0.2% ～ 0.6%）より自然な変動幅
-  const trendDirection = Math.random() > 0.5 ? 1 : -1
   const volatilityPercent = 0.002 + Math.random() * 0.004  // 0.2% ~ 0.6%
   const volatility = open * volatilityPercent
 
@@ -948,14 +976,14 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   `).bind(candleTime, open, high, low, close, 50).run()
   
   // Calculate RSI using past 15 candles
-  const recentCandles = await db.prepare(`
+  const rsiCandles = await db.prepare(`
     SELECT * FROM gold10_candles
     WHERE timestamp <= ?
     ORDER BY timestamp DESC
     LIMIT 15
   `).bind(candleTime).all()
   
-  const candlesForRSI = (recentCandles.results as Candle[]).reverse()
+  const candlesForRSI = (rsiCandles.results as Candle[]).reverse()
   const rsi = calculateRSI(candlesForRSI, 14)
   
   // Update RSI
