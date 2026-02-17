@@ -3677,6 +3677,25 @@ app.get('/trade', async (c) => {
                         }
                     }
                     
+                    // 15分経過ポジションの自動決済チェック（5秒ごとに実行）
+                    try {
+                        // 現在価格を送信して正確な決済を行う
+                        console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
+                        const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
+                            currentPrice: currentPrice
+                        });
+                        if (autoCloseResponse.data.closedCount > 0) {
+                            const closedCount = autoCloseResponse.data.closedCount;
+                            const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
+                            showNotification('info', '自動決済', closedCount + '件のポジションが15分経過により自動決済されました（損益: ¥' + totalProfit + '）');
+                            // ユーザーデータと保有ポジションを再読み込み
+                            await loadUserData();
+                            await loadOpenPositions();
+                        }
+                    } catch (error) {
+                        console.error('[Genspark] 自動決済チェックエラー:', error);
+                    }
+                    
                 } catch (error) {
                     console.error('[Genspark] ❌ ポーリングエラー:', error);
                 }
@@ -3685,32 +3704,8 @@ app.get('/trade', async (c) => {
             console.log('[Genspark] ✅ サーバー同期モード起動完了！');
         }
 
-        // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
+        // 保有ポジションの損益を10秒ごとに更新
         setInterval(async () => {
-            // 最新のGOLD10価格を取得して表示を更新
-            await updateGoldPrice();
-            
-            // チャート更新は5秒ごとのポーリングで自動実行
-            
-            // 15分経過ポジションの自動決済チェック
-            try {
-                // 現在価格を送信して正確な決済を行う
-                console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
-                const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
-                    currentPrice: currentPrice
-                });
-                if (autoCloseResponse.data.closedCount > 0) {
-                    const closedCount = autoCloseResponse.data.closedCount;
-                    const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
-                    showNotification('info', '自動決済', closedCount + '件のポジションが15分経過により自動決済されました（損益: ¥' + totalProfit + '）');
-                    // ユーザーデータと保有ポジションを再読み込み
-                    await loadUserData();
-                    await loadOpenPositions();
-                }
-            } catch (error) {
-                console.error('自動決済チェックエラー:', error);
-            }
-            
             // 保有ポジションの損益も更新
             if (openPositions.length > 0) {
                 displayOpenPositions();
