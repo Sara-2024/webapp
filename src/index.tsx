@@ -58,14 +58,34 @@ async function getCurrentGoldPrice(apiKey?: string): Promise<number> {
 // ユーティリティ関数：GOLD10の現在価格を取得（DBから最新のローソク足価格を取得）
 async function getGold10Price(db: D1Database): Promise<number> {
   try {
+    // 現在時刻
+    const now = Math.floor(Date.now() / 1000)
+    
+    // 最新のローソク足を取得（現在時刻以前）
     const latestCandle = await db.prepare(`
-      SELECT close FROM gold10_candles
+      SELECT timestamp, close FROM gold10_candles
+      WHERE timestamp <= ?
       ORDER BY timestamp DESC
       LIMIT 1
-    `).first()
+    `).bind(now).first()
 
     if (latestCandle && latestCandle.close) {
-      return latestCandle.close as number
+      // 最新ローソク足のcloseを基準価格とする
+      const basePrice = latestCandle.close as number
+      const lastTimestamp = latestCandle.timestamp as number
+      
+      // 最新ローソク足からの経過時間（秒）
+      const elapsedSeconds = now - lastTimestamp
+      
+      // 30秒以内（同じローソク足期間内）なら、微小な変動を追加
+      if (elapsedSeconds < 30) {
+        // 経過時間に応じて0-0.2%の変動を追加（リアルタイム性を高める）
+        const progressRatio = elapsedSeconds / 30  // 0.0 ~ 1.0
+        const microChange = (Math.random() - 0.5) * basePrice * 0.002 * progressRatio  // 最大±0.2%
+        return basePrice + microChange
+      }
+      
+      return basePrice
     }
 
     // データがない場合はデフォルト値
@@ -544,8 +564,10 @@ app.post('/api/trade/auto-close-expired', async (c) => {
       return c.json({ closedCount: 0 })
     }
 
-    // GOLD10の最新価格を取得
-    const exitPrice = await getGold10Price(c.env.DB)
+    // クライアントから送られた現在価格を優先、なければDBから取得
+    const body = await c.req.json().catch(() => ({}))
+    const exitPrice = body.currentPrice || await getGold10Price(c.env.DB)
+    
     const exitTime = new Date().toISOString()
     let totalClosedProfit = 0
 
@@ -3654,7 +3676,10 @@ app.get('/trade', async (c) => {
             
             // 15分経過ポジションの自動決済チェック
             try {
-                const autoCloseResponse = await axios.post('/api/trade/auto-close-expired');
+                // 現在価格を送信して正確な決済を行う
+                const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
+                    currentPrice: currentPrice
+                });
                 if (autoCloseResponse.data.closedCount > 0) {
                     const closedCount = autoCloseResponse.data.closedCount;
                     const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
