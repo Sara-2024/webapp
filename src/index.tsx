@@ -5233,6 +5233,9 @@ app.get('/admin', (c) => {
                     const latest = candles[candles.length - 1];
                     document.getElementById('currentGoldPrice').textContent = '$' + latest.close.toFixed(2);
                 }
+                
+                // 予約サインを読み込み
+                loadReservedSignals();
             } catch (error) {
                 console.error('システム情報取得エラー:', error);
             }
@@ -5509,21 +5512,21 @@ app.get('/admin', (c) => {
             }
         }
 
-        // サイン予約【サイン機能完全無効化】
+        // サイン予約
         async function reserveSignal() {
-            alert('サイン予約機能は現在無効化されています');
-            return;
-            
-            /* 【サイン機能完全無効化】
             const type = document.getElementById('reserveSignalType').value;
-            const hours = parseInt(document.getElementById('reserveHours').value);
+            const minutes = parseInt(document.getElementById('reserveMinutes').value);
             
-            if (!confirm(\`\${hours}時間後に\${type === 'BUY' ? '買い' : '売り'}サインを予約しますか？\`)) {
+            const displayTime = minutes >= 60 
+                ? \`\${Math.floor(minutes / 60)}時間\${minutes % 60 > 0 ? minutes % 60 + '分' : ''}\`
+                : \`\${minutes}分\`;
+            
+            if (!confirm(\`\${displayTime}後に\${type === 'BUY' ? '買い' : '売り'}サインを予約しますか？\`)) {
                 return;
             }
             
             try {
-                const response = await axios.post('/api/admin/gold10/reserve-signal', { type, hours });
+                const response = await axios.post('/api/admin/gold10/reserve-signal', { type, minutes });
                 alert(response.data.message);
                 loadReservedSignals(); // 予約リストを更新
             } catch (error) {
@@ -5535,7 +5538,6 @@ app.get('/admin', (c) => {
                     alert('サイン予約に失敗しました: ' + (error.response?.data?.error || error.message));
                 }
             }
-            */
         }
 
         // 予約サイン一覧を読み込み
@@ -5543,13 +5545,36 @@ app.get('/admin', (c) => {
             try {
                 const response = await axios.get('/api/admin/gold10/reserved-signals');
                 const container = document.getElementById('reservedSignalsList');
+                const now = Math.floor(Date.now() / 1000);
                 
                 if (response.data.reservations.length === 0) {
                     container.textContent = '予約なし';
                 } else {
                     container.innerHTML = response.data.reservations.map(r => {
-                        const time = new Date(r.reserveTimeStr);
-                        return \`<div class="py-1">\${r.type === 'BUY' ? '買い' : '売り'}サイン - \${time.toLocaleString('ja-JP')}</div>\`;
+                        const reserveTime = r.reserve_time;
+                        const remainingSeconds = reserveTime - now;
+                        const remainingMinutes = Math.floor(remainingSeconds / 60);
+                        const remainingHours = Math.floor(remainingMinutes / 60);
+                        const remainingMins = remainingMinutes % 60;
+                        
+                        let timeDisplay = '';
+                        if (remainingSeconds <= 0) {
+                            timeDisplay = '実行待ち';
+                        } else if (remainingHours > 0) {
+                            timeDisplay = \`残り \${remainingHours}時間\${remainingMins > 0 ? remainingMins + '分' : ''}\`;
+                        } else if (remainingMinutes > 0) {
+                            timeDisplay = \`残り \${remainingMinutes}分\`;
+                        } else {
+                            timeDisplay = \`残り \${remainingSeconds}秒\`;
+                        }
+                        
+                        const time = new Date(reserveTime * 1000);
+                        const typeText = r.type === 'BUY' ? '買い' : '売り';
+                        return \`<div class="py-2 border-b border-gray-200 last:border-0">
+                            <div class="font-bold text-blue-600">\${typeText}サイン</div>
+                            <div class="text-xs text-gray-600">\${time.toLocaleString('ja-JP')}</div>
+                            <div class="text-sm font-bold text-red-600">\${timeDisplay}</div>
+                        </div>\`;
                     }).join('');
                 }
             } catch (error) {
@@ -5787,6 +5812,18 @@ app.get('/admin', (c) => {
         document.getElementById('newPassword').addEventListener('input', (e) => {
             e.target.value = e.target.value.replace(/[^0-9a-zA-Z]/g, '');
         });
+
+        // 予約サインの自動実行とリアルタイム更新
+        setInterval(async () => {
+            try {
+                // 予約サインを実行
+                await axios.post('/api/admin/gold10/execute-reservations');
+                // 予約リストを更新
+                loadReservedSignals();
+            } catch (error) {
+                // エラーは無視（認証エラーなど）
+            }
+        }, 10000);  // 10秒ごと
 
         // 初期化: チャートパネルは最初から表示されるので初期化
         // 他のパネルは、タブクリック時にロードされる
