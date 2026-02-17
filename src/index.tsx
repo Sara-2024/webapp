@@ -3699,9 +3699,9 @@ app.get('/trade', async (c) => {
                         const closedCount = autoCloseResponse.data.closedCount;
                         const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
                         showNotification('info', '自動決済', closedCount + '件のポジションが15分経過により自動決済されました（損益: ¥' + totalProfit + '）');
-                        // ユーザーデータと保有ポジションを再読み込み
-                        await loadUserData();
-                        await loadOpenPositions();
+                        // ユーザーデータと保有ポジションを再読み込み（エラーを無視）
+                        loadUserData().catch(() => {});
+                        loadOpenPositions().catch(() => {});
                     }
                 } catch (error) {
                     console.error('[Genspark] 自動決済チェックエラー:', error);
