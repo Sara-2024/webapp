@@ -567,6 +567,7 @@ app.post('/api/trade/auto-close-expired', async (c) => {
     // クライアントから送られた現在価格を優先、なければDBから取得
     const body = await c.req.json().catch(() => ({}))
     const exitPrice = body.currentPrice || await getGold10Price(c.env.DB)
+    console.log('[Auto-Close] 決済価格:', exitPrice, '| フロントから送信:', body.currentPrice, '| DBから取得:', !body.currentPrice)
     
     const exitTime = new Date().toISOString()
     let totalClosedProfit = 0
@@ -584,6 +585,15 @@ app.post('/api/trade/auto-close-expired', async (c) => {
       } else {
         profitLoss = (entryPrice - exitPrice) * amount * 10 * 152.96
       }
+
+      console.log('[Auto-Close] ポジション決済:', {
+        tradeId: trade.id,
+        type,
+        entryPrice,
+        exitPrice,
+        amount,
+        profitLoss: profitLoss.toFixed(0)
+      })
 
       totalClosedProfit += profitLoss
 
@@ -3270,6 +3280,14 @@ app.get('/trade', async (c) => {
                 const pl = pos.type === 'BUY' 
                     ? (currentPrice - pos.entry_price) * pos.amount * 10 * 152.96
                     : (pos.entry_price - currentPrice) * pos.amount * 10 * 152.96;
+                
+                console.log('[Genspark] ポジション損益計算:', {
+                    type: pos.type,
+                    entryPrice: pos.entry_price,
+                    currentPrice: currentPrice,
+                    amount: pos.amount,
+                    profitLoss: pl.toFixed(0)
+                });
                 const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
                 const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300';
                 
@@ -3677,6 +3695,7 @@ app.get('/trade', async (c) => {
             // 15分経過ポジションの自動決済チェック
             try {
                 // 現在価格を送信して正確な決済を行う
+                console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
                 const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
                     currentPrice: currentPrice
                 });
