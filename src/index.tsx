@@ -896,6 +896,18 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
 }
 
 async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<{close: number}> {
+  // 🎯 価格範囲の制限（チャートが飛ばないように）
+  const MIN_PRICE = 4500
+  const MAX_PRICE = 5500
+  const TARGET_PRICE = 5000  // 中心価格
+  
+  // previousCloseが範囲外なら強制的に範囲内に戻す
+  if (previousClose < MIN_PRICE) {
+    previousClose = MIN_PRICE + 50
+  } else if (previousClose > MAX_PRICE) {
+    previousClose = MAX_PRICE - 50
+  }
+  
   const open = previousClose
 
   // 最小変動幅を保証（0.1% = 5ドル程度）
@@ -918,12 +930,22 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     cumulativeChange = ((newest.close - oldest.open) / oldest.open) * 100  // %
   }
   
+  // 🎯 中心価格からの乖離を計算
+  const deviationFromCenter = ((open - TARGET_PRICE) / TARGET_PRICE) * 100  // %
+  
   // トレンド方向の決定
-  // 累積変動が+3%以上なら80%の確率で下降、-3%以下なら80%の確率で上昇
-  // それ以外は50%の確率でランダム
+  // 1. 価格が中心から大きく離れている場合は強制的に戻す
+  // 2. 累積変動が+3%以上なら80%の確率で下降、-3%以下なら80%の確率で上昇
+  // 3. それ以外は50%の確率でランダム
   let trendDirection = Math.random() > 0.5 ? 1 : -1
   
-  if (cumulativeChange > 3.0) {
+  if (deviationFromCenter > 5.0) {
+    // 中心より5%以上高い → 90%の確率で下降
+    trendDirection = Math.random() < 0.9 ? -1 : 1
+  } else if (deviationFromCenter < -5.0) {
+    // 中心より5%以上低い → 90%の確率で上昇
+    trendDirection = Math.random() < 0.9 ? 1 : -1
+  } else if (cumulativeChange > 3.0) {
     // 過度な上昇 → 下降方向へ誘導
     trendDirection = Math.random() < 0.8 ? -1 : 1
   } else if (cumulativeChange < -3.0) {
@@ -964,6 +986,13 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     }
   }
   
+  // 🎯 価格範囲の強制（範囲外にならないように）
+  if (close < MIN_PRICE) {
+    close = MIN_PRICE + Math.random() * 10
+  } else if (close > MAX_PRICE) {
+    close = MAX_PRICE - Math.random() * 10
+  }
+  
   // high/lowも制限
   if (high > open + maxChange) {
     high = open + maxChange
@@ -971,6 +1000,10 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   if (low < open - maxChange) {
     low = open - maxChange
   }
+  
+  // 🎯 high/lowも価格範囲内に制限
+  if (high > MAX_PRICE) high = MAX_PRICE
+  if (low < MIN_PRICE) low = MIN_PRICE
 
   // 最小変動幅を強制（平らなローソク足を防ぐ）
   // 最大変動制限後に確認し、必要に応じて調整
