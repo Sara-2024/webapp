@@ -2151,6 +2151,17 @@ app.delete('/api/chat/messages/:id', async (c) => {
 
 // ========== HTML レンダリング ==========
 
+// Favicon
+app.get('/favicon.svg', (c) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#1e40af"/>
+  <text x="50" y="70" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#fbbf24" text-anchor="middle">G</text>
+</svg>`;
+  c.header('Content-Type', 'image/svg+xml');
+  c.header('Cache-Control', 'public, max-age=31536000');
+  return c.body(svg);
+})
+
 // ログインページ
 app.get('/', (c) => {
   return c.html(`
