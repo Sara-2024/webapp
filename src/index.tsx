@@ -2790,15 +2790,11 @@ app.get('/trade', async (c) => {
                     mode: LightweightCharts.CrosshairMode.Normal,
                 },
                 rightPriceScale: {
-                    autoScale: false,  // 自動スケールを無効化して価格範囲を固定
                     scaleMargins: {
                         top: 0.05,    // 上部5%のマージン（価格範囲が狭いので縮小）
                         bottom: 0.05, // 下部5%のマージン
                     },
                     borderVisible: false,
-                    // 価格範囲を4500-5500に固定
-                    mode: LightweightCharts.PriceScaleMode.Normal,
-                    // 表示範囲の初期設定は後で setVisibleLogicalRange() で設定
                 },
                 timeScale: {
                     timeVisible: false,
@@ -2835,16 +2831,13 @@ app.get('/trade', async (c) => {
                 borderVisible: false,
                 wickUpColor: '#26a69a',
                 wickDownColor: '#ef5350',
-                priceScaleId: 'right',  // 右側の価格スケールを使用
-            });
-            
-            // 価格範囲を4500-5500に固定
-            chart.priceScale('right').applyOptions({
-                autoScale: false,
-            });
-            chart.priceScale('right').setVisibleRange({
-                from: 4500,
-                to: 5500
+                priceScaleId: 'right',
+                autoscaleInfoProvider: () => ({
+                    priceRange: {
+                        minValue: 4500,
+                        maxValue: 5500,
+                    },
+                }),
             });
             
             // MACDチャート
@@ -3029,18 +3022,13 @@ app.get('/trade', async (c) => {
                         to: latestTime
                     });
                     
-                    // 【修正】価格範囲を4500-5500に固定維持（autoScaleを無効に保つ）
+                    // 【修正】価格範囲は autoscaleInfoProvider で固定済み
+                    // autoScale は true のままで OK（autoscaleInfoProvider が優先される）
                     chart.priceScale('right').applyOptions({ 
-                        autoScale: false,  // 固定範囲を維持
                         scaleMargins: {
                             top: 0.05,    // 上部5%のマージン
                             bottom: 0.05, // 下部5%のマージン
                         },
-                    });
-                    // 価格範囲を再設定（4500-5500に固定）
-                    chart.priceScale('right').setVisibleRange({
-                        from: 4500,
-                        to: 5500
                     });
                     
                     // 時間軸をデータに合わせる
@@ -3724,11 +3712,7 @@ app.get('/trade', async (c) => {
                                         close: latestCandle.close
                                     });
                                     
-                                    // 【修正】新しいローソク足追加後に価格範囲を4500-5500に再固定
-                                    chart.priceScale('right').setVisibleRange({
-                                        from: 4500,
-                                        to: 5500
-                                    });
+                                    // 【修正】価格範囲は autoscaleInfoProvider で自動的に固定される
                                     
                                     console.log('[Genspark] ✅ 新しいローソク足をチャートに追加:', latestCandle.timestamp);
                                 } else {
