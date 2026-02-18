@@ -2916,18 +2916,88 @@ app.get('/trade', async (c) => {
             });
         }
 
-        // GOLD10データを読み込んでチャートに表示（初回のみsetData使用）
+        // GOLD10データを読み込んでチャートに表示（全データsetDataで置き換え）
         async function loadGold10Chart() {
             try {
                 // 過去12時間分のローソク足データを取得
                 const candlesResponse = await axios.get('/api/gold10/candles?hours=12');
                 const candles = candlesResponse.data;
 
+                console.log('[Chart] === データ取得 ===');
+                console.log('[Chart] ローソク足数:', candles.length);
+                if (candles.length > 0) {
+                    const prices = candles.map(c => c.close);
+                    const minPrice = Math.min(...prices);
+                    const maxPrice = Math.max(...prices);
+                    console.log('[Chart] 価格範囲:', minPrice.toFixed(2), '-', maxPrice.toFixed(2));
+                }
+
                 // RSIデータを含むローソク足データを保存
                 candlesDataWithRSI = candles;
 
+                // 【修正1: time単位統一チェック - 秒単位に統一】
+                // timestampが1700000000以上なら秒、それ以上ならミリ秒と判定
+                const normalizedCandles = candles.map(c => {
+                    let normalizedTime = c.timestamp;
+                    if (c.timestamp > 100000000000) {
+                        // ミリ秒 → 秒に変換
+                        normalizedTime = Math.floor(c.timestamp / 1000);
+                        console.log('[Chart] ⚠️ ミリ秒検出、秒に変換:', c.timestamp, '→', normalizedTime);
+                    }
+                    return {
+                        timestamp: normalizedTime,
+                        open: c.open,
+                        high: c.high,
+                        low: c.low,
+                        close: c.close,
+                        rsi: c.rsi
+                    };
+                });
+
+                // 【修正2: 重複time除去 - 最新のデータを優先】
+                const uniqueCandles = [];
+                const timeMap = new Map();
+                for (const candle of normalizedCandles) {
+                    if (timeMap.has(candle.timestamp)) {
+                        console.log('[Chart] ⚠️ 重複time検出:', candle.timestamp, '上書きします');
+                    }
+                    timeMap.set(candle.timestamp, candle);
+                }
+                uniqueCandles.push(...timeMap.values());
+                uniqueCandles.sort((a, b) => a.timestamp - b.timestamp);
+
+                console.log('[Chart] 重複除去後:', uniqueCandles.length, '本');
+
+                // 【修正3: 外れ値フィルタ（±20%）】
+                if (uniqueCandles.length > 10) {
+                    const sortedPrices = uniqueCandles.map(c => c.close).sort((a, b) => a - b);
+                    const median = sortedPrices[Math.floor(sortedPrices.length / 2)];
+                    const lowerBound = median * 0.8;
+                    const upperBound = median * 1.2;
+                    
+                    console.log('[Chart] 外れ値フィルタ: 中央値', median.toFixed(2), '許容範囲', lowerBound.toFixed(2), '-', upperBound.toFixed(2));
+                    
+                    const beforeCount = uniqueCandles.length;
+                    const filteredCandles = [];
+                    const outliers = [];
+                    
+                    for (const candle of uniqueCandles) {
+                        if (candle.close >= lowerBound && candle.close <= upperBound) {
+                            filteredCandles.push(candle);
+                        } else {
+                            outliers.push(candle);
+                            console.log('[Chart] ⚠️ 外れ値除外:', 'time:', candle.timestamp, 'close:', candle.close.toFixed(2));
+                        }
+                    }
+                    
+                    console.log('[Chart] 外れ値除外:', beforeCount - filteredCandles.length, '本');
+                    candlesDataWithRSI = filteredCandles;
+                } else {
+                    candlesDataWithRSI = uniqueCandles;
+                }
+
                 // ローソク足データをLightweight Charts形式に変換
-                const candleData = candles.map(c => ({
+                const candleData = candlesDataWithRSI.map(c => ({
                     time: c.timestamp,
                     open: c.open,
                     high: c.high,
@@ -2935,9 +3005,13 @@ app.get('/trade', async (c) => {
                     close: c.close
                 }));
 
-                // 【Lightweight Charts 固定モード】
-                // チャート初期化：setData()は初回のみ1回だけ実行
-                if (candleData.length > 0 && !isChartInitialized) {
+                // 【修正4: setData()で全置き換え】
+                if (candleData.length > 0) {
+                    console.log('[Chart] === setData()実行 ===');
+                    console.log('[Chart] データ数:', candleData.length);
+                    console.log('[Chart] 時間範囲:', new Date(candleData[0].time * 1000).toISOString(), '-', 
+                                new Date(candleData[candleData.length - 1].time * 1000).toISOString());
+                    
                     candlestickSeries.setData(candleData);
                     isChartInitialized = true;
                     lastCandleTimestamp = candleData[candleData.length - 1].time;
@@ -2957,19 +3031,9 @@ app.get('/trade', async (c) => {
                     macdSignalSeries.setData(signalLineData);
                     macdHistogramSeries.setData(histogramData);
                     
-                    // チャートの表示範囲を最新データに合わせる
-                    const latestTime = candleData[candleData.length - 1].time;
-                    const earliestTime = candleData[Math.max(0, candleData.length - 100)].time; // 最新100本を表示
-                    chart.timeScale().setVisibleRange({
-                        from: earliestTime,
-                        to: latestTime
-                    });
-                    
-                    // MACDチャートも同じ範囲に
-                    macdChart.timeScale().setVisibleRange({
-                        from: earliestTime,
-                        to: latestTime
-                    });
+                    // 【修正5: fitContent()で表示範囲を正常化】
+                    chart.timeScale().fitContent();
+                    macdChart.timeScale().fitContent();
                     
                     // 価格軸を表示データの範囲に合わせて調整
                     // autoScaleとfitContentで自動調整（実際のローソク足の価格範囲に合わせる）
@@ -3642,35 +3706,91 @@ app.get('/trade', async (c) => {
                                 rsi: latestCandle.rsi ? latestCandle.rsi.toFixed(1) : 'N/A'
                             });
                             
-                            // 新しいローソク足のみチャートに追加（既存は更新しない）
+                            // 【修正: update()廃止、setData()で全置き換え】
                             if (candlestickSeries) {
-                                const alreadyExists = candlesDataWithRSI.some(c => c.timestamp === latestCandle.timestamp);
-                                if (!alreadyExists) {
-                                    candlestickSeries.update({
-                                        time: latestCandle.timestamp,
-                                        open: latestCandle.open,
-                                        high: latestCandle.high,
-                                        low: latestCandle.low,
-                                        close: latestCandle.close
+                                console.log('[Genspark] 🔄 新しいローソク足検出、全データ再読み込み');
+                                
+                                // 全データを再取得してsetData()で置き換え
+                                try {
+                                    const refreshResponse = await axios.get('/api/gold10/candles?hours=12');
+                                    const refreshCandles = refreshResponse.data;
+                                    
+                                    // time単位統一
+                                    const normalizedRefresh = refreshCandles.map(c => {
+                                        let normalizedTime = c.timestamp;
+                                        if (c.timestamp > 100000000000) {
+                                            normalizedTime = Math.floor(c.timestamp / 1000);
+                                        }
+                                        return {
+                                            timestamp: normalizedTime,
+                                            open: c.open,
+                                            high: c.high,
+                                            low: c.low,
+                                            close: c.close,
+                                            rsi: c.rsi
+                                        };
                                     });
-                                    console.log('[Genspark] ✅ 新しいローソク足をチャートに追加:', latestCandle.timestamp);
-                                } else {
-                                    console.log('[Genspark] ⏭️ ローソク足は既に存在（スキップ）:', latestCandle.timestamp);
+                                    
+                                    // 重複除去
+                                    const timeMap = new Map();
+                                    for (const candle of normalizedRefresh) {
+                                        timeMap.set(candle.timestamp, candle);
+                                    }
+                                    const uniqueRefresh = Array.from(timeMap.values());
+                                    uniqueRefresh.sort((a, b) => a.timestamp - b.timestamp);
+                                    
+                                    // 外れ値フィルタ
+                                    if (uniqueRefresh.length > 10) {
+                                        const sortedPrices = uniqueRefresh.map(c => c.close).sort((a, b) => a - b);
+                                        const median = sortedPrices[Math.floor(sortedPrices.length / 2)];
+                                        const lowerBound = median * 0.8;
+                                        const upperBound = median * 1.2;
+                                        
+                                        const filteredRefresh = uniqueRefresh.filter(c => 
+                                            c.close >= lowerBound && c.close <= upperBound
+                                        );
+                                        
+                                        candlesDataWithRSI = filteredRefresh;
+                                    } else {
+                                        candlesDataWithRSI = uniqueRefresh;
+                                    }
+                                    
+                                    // setData()で全置き換え
+                                    const refreshData = candlesDataWithRSI.map(c => ({
+                                        time: c.timestamp,
+                                        open: c.open,
+                                        high: c.high,
+                                        low: c.low,
+                                        close: c.close
+                                    }));
+                                    
+                                    candlestickSeries.setData(refreshData);
+                                    
+                                    // MACDも再計算
+                                    const macdData = calculateMACD(candlesDataWithRSI);
+                                    macdLineSeries.setData(macdData.map(d => ({ time: d.time, value: d.macd })));
+                                    macdSignalSeries.setData(macdData.map(d => ({ time: d.time, value: d.signal })));
+                                    macdHistogramSeries.setData(macdData.map(d => ({ 
+                                        time: d.time, 
+                                        value: d.histogram,
+                                        color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
+                                    })));
+                                    
+                                    // fitContent()で表示範囲を正常化
+                                    chart.timeScale().fitContent();
+                                    macdChart.timeScale().fitContent();
+                                    
+                                    console.log('[Genspark] ✅ チャート全体を更新:', refreshData.length, '本');
+                                    
+                                } catch (refreshError) {
+                                    console.error('[Genspark] チャート更新エラー:', refreshError);
                                 }
                             }
                             
                             window.__lastCandleTime = latestCandle.timestamp;
                             
-                            // 新しいローソク足が追加されたらサインも更新
-                            if (candlesDataWithRSI) {
-                                // candlesDataWithRSIに新しいローソク足を追加
-                                const existingIndex = candlesDataWithRSI.findIndex(c => c.timestamp === latestCandle.timestamp);
-                                if (existingIndex < 0) {
-                                    candlesDataWithRSI.push(latestCandle);
-                                }
-                                // サインを更新
-                                await loadUserSignals();
-                            }
+                            // サインを更新
+                            await loadUserSignals();
                         }
                     }
                     
