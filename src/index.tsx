@@ -3690,6 +3690,13 @@ app.get('/trade', async (c) => {
             // 非同期処理を開始するが、完了を待たない（ノンブロッキング）
             (async () => {
                 try {
+                    // 予約サインの自動実行（管理画面が開いていなくても実行）
+                    try {
+                        await axios.post('/api/admin/gold10/execute-reservations');
+                    } catch (err) {
+                        // 認証エラーは無視（通常ユーザーは権限なし）
+                    }
+                    
                     // 現在価格を送信して正確な決済を行う
                     console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
                     const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
