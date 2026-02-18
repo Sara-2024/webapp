@@ -567,7 +567,6 @@ app.post('/api/trade/auto-close-expired', async (c) => {
     // クライアントから送られた現在価格を優先、なければDBから取得
     const body = await c.req.json().catch(() => ({}))
     const exitPrice = body.currentPrice || await getGold10Price(c.env.DB)
-    console.log('[Auto-Close] 決済価格:', exitPrice, '| フロントから送信:', body.currentPrice, '| DBから取得:', !body.currentPrice)
     
     const exitTime = new Date().toISOString()
     let totalClosedProfit = 0
@@ -585,15 +584,6 @@ app.post('/api/trade/auto-close-expired', async (c) => {
       } else {
         profitLoss = (entryPrice - exitPrice) * amount * 10 * 152.96
       }
-
-      console.log('[Auto-Close] ポジション決済:', {
-        tradeId: trade.id,
-        type,
-        entryPrice,
-        exitPrice,
-        amount,
-        profitLoss: profitLoss.toFixed(0)
-      })
 
       totalClosedProfit += profitLoss
 
@@ -3295,14 +3285,6 @@ app.get('/trade', async (c) => {
                 const pl = pos.type === 'BUY' 
                     ? (currentPrice - pos.entry_price) * pos.amount * 10 * 152.96
                     : (pos.entry_price - currentPrice) * pos.amount * 10 * 152.96;
-                
-                console.log('[Genspark] ポジション損益計算:', {
-                    type: pos.type,
-                    entryPrice: pos.entry_price,
-                    currentPrice: currentPrice,
-                    amount: pos.amount,
-                    profitLoss: pl.toFixed(0)
-                });
                 const plColor = pl >= 0 ? 'text-green-600' : 'text-red-600';
                 const typeColor = pos.type === 'BUY' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300';
                 
@@ -3692,25 +3674,6 @@ app.get('/trade', async (c) => {
                         }
                     }
                     
-                    // 15分経過ポジションの自動決済チェック（5秒ごとに実行）
-                    try {
-                        // 現在価格を送信して正確な決済を行う
-                        console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
-                        const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
-                            currentPrice: currentPrice
-                        });
-                        if (autoCloseResponse.data.closedCount > 0) {
-                            const closedCount = autoCloseResponse.data.closedCount;
-                            const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
-                            showNotification('info', '自動決済', closedCount + '件のポジションが15分経過により自動決済されました（損益: ¥' + totalProfit + '）');
-                            // ユーザーデータと保有ポジションを再読み込み
-                            await loadUserData();
-                            await loadOpenPositions();
-                        }
-                    } catch (error) {
-                        console.error('[Genspark] 自動決済チェックエラー:', error);
-                    }
-                    
                 } catch (error) {
                     console.error('[Genspark] ❌ ポーリングエラー:', error);
                 }
@@ -3719,8 +3682,31 @@ app.get('/trade', async (c) => {
             console.log('[Genspark] ✅ サーバー同期モード起動完了！');
         }
 
-        // 保有ポジションの損益を10秒ごとに更新
+        // GOLD10価格と損益を10秒ごとに更新（ローソク足の途中経過を表示）
         setInterval(async () => {
+            // 最新のGOLD10価格を取得して表示を更新
+            await updateGoldPrice();
+            
+            // チャート更新は5秒ごとのポーリングで自動実行
+            
+            // 15分経過ポジションの自動決済チェック
+            try {
+                // 現在価格を送信して正確な決済を行う
+                const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
+                    currentPrice: currentPrice
+                });
+                if (autoCloseResponse.data.closedCount > 0) {
+                    const closedCount = autoCloseResponse.data.closedCount;
+                    const totalProfit = Math.round(autoCloseResponse.data.totalProfit).toLocaleString('ja-JP');
+                    showNotification('info', '自動決済', closedCount + '件のポジションが15分経過により自動決済されました（損益: ¥' + totalProfit + '）');
+                    // ユーザーデータと保有ポジションを再読み込み
+                    await loadUserData();
+                    await loadOpenPositions();
+                }
+            } catch (error) {
+                console.error('自動決済チェックエラー:', error);
+            }
+            
             // 保有ポジションの損益も更新
             if (openPositions.length > 0) {
                 displayOpenPositions();
@@ -5244,9 +5230,6 @@ app.get('/admin', (c) => {
                     const latest = candles[candles.length - 1];
                     document.getElementById('currentGoldPrice').textContent = '$' + latest.close.toFixed(2);
                 }
-                
-                // 予約サインを読み込み
-                loadReservedSignals();
             } catch (error) {
                 console.error('システム情報取得エラー:', error);
             }
@@ -5523,21 +5506,21 @@ app.get('/admin', (c) => {
             }
         }
 
-        // サイン予約
+        // サイン予約【サイン機能完全無効化】
         async function reserveSignal() {
+            alert('サイン予約機能は現在無効化されています');
+            return;
+            
+            /* 【サイン機能完全無効化】
             const type = document.getElementById('reserveSignalType').value;
-            const minutes = parseInt(document.getElementById('reserveMinutes').value);
+            const hours = parseInt(document.getElementById('reserveHours').value);
             
-            const displayTime = minutes >= 60 
-                ? \`\${Math.floor(minutes / 60)}時間\${minutes % 60 > 0 ? minutes % 60 + '分' : ''}\`
-                : \`\${minutes}分\`;
-            
-            if (!confirm(\`\${displayTime}後に\${type === 'BUY' ? '買い' : '売り'}サインを予約しますか？\`)) {
+            if (!confirm(\`\${hours}時間後に\${type === 'BUY' ? '買い' : '売り'}サインを予約しますか？\`)) {
                 return;
             }
             
             try {
-                const response = await axios.post('/api/admin/gold10/reserve-signal', { type, minutes });
+                const response = await axios.post('/api/admin/gold10/reserve-signal', { type, hours });
                 alert(response.data.message);
                 loadReservedSignals(); // 予約リストを更新
             } catch (error) {
@@ -5549,6 +5532,7 @@ app.get('/admin', (c) => {
                     alert('サイン予約に失敗しました: ' + (error.response?.data?.error || error.message));
                 }
             }
+            */
         }
 
         // 予約サイン一覧を読み込み
@@ -5556,36 +5540,13 @@ app.get('/admin', (c) => {
             try {
                 const response = await axios.get('/api/admin/gold10/reserved-signals');
                 const container = document.getElementById('reservedSignalsList');
-                const now = Math.floor(Date.now() / 1000);
                 
                 if (response.data.reservations.length === 0) {
                     container.textContent = '予約なし';
                 } else {
                     container.innerHTML = response.data.reservations.map(r => {
-                        const reserveTime = r.reserve_time;
-                        const remainingSeconds = reserveTime - now;
-                        const remainingMinutes = Math.floor(remainingSeconds / 60);
-                        const remainingHours = Math.floor(remainingMinutes / 60);
-                        const remainingMins = remainingMinutes % 60;
-                        
-                        let timeDisplay = '';
-                        if (remainingSeconds <= 0) {
-                            timeDisplay = '実行待ち';
-                        } else if (remainingHours > 0) {
-                            timeDisplay = \`残り \${remainingHours}時間\${remainingMins > 0 ? remainingMins + '分' : ''}\`;
-                        } else if (remainingMinutes > 0) {
-                            timeDisplay = \`残り \${remainingMinutes}分\`;
-                        } else {
-                            timeDisplay = \`残り \${remainingSeconds}秒\`;
-                        }
-                        
-                        const time = new Date(reserveTime * 1000);
-                        const typeText = r.type === 'BUY' ? '買い' : '売り';
-                        return \`<div class="py-2 border-b border-gray-200 last:border-0">
-                            <div class="font-bold text-blue-600">\${typeText}サイン</div>
-                            <div class="text-xs text-gray-600">\${time.toLocaleString('ja-JP')}</div>
-                            <div class="text-sm font-bold text-red-600">\${timeDisplay}</div>
-                        </div>\`;
+                        const time = new Date(r.reserveTimeStr);
+                        return \`<div class="py-1">\${r.type === 'BUY' ? '買い' : '売り'}サイン - \${time.toLocaleString('ja-JP')}</div>\`;
                     }).join('');
                 }
             } catch (error) {
@@ -5823,18 +5784,6 @@ app.get('/admin', (c) => {
         document.getElementById('newPassword').addEventListener('input', (e) => {
             e.target.value = e.target.value.replace(/[^0-9a-zA-Z]/g, '');
         });
-
-        // 予約サインの自動実行とリアルタイム更新
-        setInterval(async () => {
-            try {
-                // 予約サインを実行
-                await axios.post('/api/admin/gold10/execute-reservations');
-                // 予約リストを更新
-                loadReservedSignals();
-            } catch (error) {
-                // エラーは無視（認証エラーなど）
-            }
-        }, 10000);  // 10秒ごと
 
         // 初期化: チャートパネルは最初から表示されるので初期化
         // 他のパネルは、タブクリック時にロードされる
