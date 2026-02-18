@@ -3705,106 +3705,74 @@ app.get('/trade', async (c) => {
                             latestCandle: latestCandle.timestamp,
                             lastCandleTime: window.__lastCandleTime,
                             isNew: latestCandle.timestamp > window.__lastCandleTime,
+                            isSame: latestCandle.timestamp === window.__lastCandleTime,
                             diff: latestCandle.timestamp - window.__lastCandleTime
                         });
                         
-                        // If this is a new candle, update the chart
-                        if (latestCandle.timestamp > window.__lastCandleTime) {
-                            console.log('[Genspark] 🆕 新しいローソク足検出:', {
-                                time: new Date(latestCandle.timestamp * 1000).toISOString(),
-                                close: latestCandle.close.toFixed(2),
-                                rsi: latestCandle.rsi ? latestCandle.rsi.toFixed(1) : 'N/A'
-                            });
-                            
-                            // 【修正: update()廃止、setData()で全置き換え】
-                            if (candlestickSeries) {
-                                console.log('[Genspark] 🔄 新しいローソク足検出、全データ再読み込み');
-                                
-                                // 全データを再取得してsetData()で置き換え
-                                try {
-                                    const refreshResponse = await axios.get('/api/gold10/candles?hours=12');
-                                    const refreshCandles = refreshResponse.data;
-                                    
-                                    // time単位統一
-                                    const normalizedRefresh = refreshCandles.map(c => {
-                                        let normalizedTime = c.timestamp;
-                                        if (c.timestamp > 100000000000) {
-                                            normalizedTime = Math.floor(c.timestamp / 1000);
-                                        }
-                                        return {
-                                            timestamp: normalizedTime,
-                                            open: c.open,
-                                            high: c.high,
-                                            low: c.low,
-                                            close: c.close,
-                                            rsi: c.rsi
-                                        };
-                                    });
-                                    
-                                    // 重複除去
-                                    const timeMap = new Map();
-                                    for (const candle of normalizedRefresh) {
-                                        timeMap.set(candle.timestamp, candle);
-                                    }
-                                    const uniqueRefresh = Array.from(timeMap.values());
-                                    uniqueRefresh.sort((a, b) => a.timestamp - b.timestamp);
-                                    
-                                    // 外れ値フィルタ
-                                    if (uniqueRefresh.length > 10) {
-                                        const sortedPrices = uniqueRefresh.map(c => c.close).sort((a, b) => a - b);
-                                        const median = sortedPrices[Math.floor(sortedPrices.length / 2)];
-                                        const lowerBound = median * 0.8;
-                                        const upperBound = median * 1.2;
-                                        
-                                        const filteredRefresh = uniqueRefresh.filter(c => 
-                                            c.close >= lowerBound && c.close <= upperBound
-                                        );
-                                        
-                                        candlesDataWithRSI = filteredRefresh;
-                                    } else {
-                                        candlesDataWithRSI = uniqueRefresh;
-                                    }
-                                    
-                                    // setData()で全置き換え
-                                    const refreshData = candlesDataWithRSI.map(c => ({
-                                        time: c.timestamp,
-                                        open: c.open,
-                                        high: c.high,
-                                        low: c.low,
-                                        close: c.close
-                                    }));
-                                    
-                                    candlestickSeries.setData(refreshData);
-                                    lastCandleTimestamp = refreshData[refreshData.length - 1].time;
-                                    window.__lastCandleTime = lastCandleTimestamp;
-                                    
-                                    // MACDも再計算
-                                    const macdData = calculateMACD(candlesDataWithRSI);
-                                    macdLineSeries.setData(macdData.map(d => ({ time: d.time, value: d.macd })));
-                                    macdSignalSeries.setData(macdData.map(d => ({ time: d.time, value: d.signal })));
-                                    macdHistogramSeries.setData(macdData.map(d => ({ 
-                                        time: d.time, 
-                                        value: d.histogram,
-                                        color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
-                                    })));
-                                    
-                                    // fitContent()で表示範囲を正常化
-                                    chart.timeScale().fitContent();
-                                    macdChart.timeScale().fitContent();
-                                    
-                                    console.log('[Genspark] ✅ チャート全体を更新:', refreshData.length, '本');
-                                    console.log('[Genspark] 最新timestamp:', window.__lastCandleTime, new Date(window.__lastCandleTime * 1000).toISOString());
-                                    
-                                } catch (refreshError) {
-                                    console.error('[Genspark] チャート更新エラー:', refreshError);
-                                }
+                        // 【修正: update()のみで更新、全データ再取得は禁止】
+                        if (candlestickSeries) {
+                            // time単位統一（ミリ秒→秒）
+                            let normalizedTime = latestCandle.timestamp;
+                            if (latestCandle.timestamp > 100000000000) {
+                                normalizedTime = Math.floor(latestCandle.timestamp / 1000);
+                                console.log('[Genspark] ⚠️ ミリ秒検出、秒に変換:', latestCandle.timestamp, '→', normalizedTime);
                             }
                             
-                            // サインを更新
-                            await loadUserSignals();
-                        } else {
-                            // 新しいローソク足がない場合もログ出力
-                            console.log('[Genspark] ローソク足は最新:', latestCandle.timestamp, '現在のlastTime:', window.__lastCandleTime);
+                            const newBar = {
+                                time: normalizedTime,
+                                open: latestCandle.open,
+                                high: latestCandle.high,
+                                low: latestCandle.low,
+                                close: latestCandle.close
+                            };
+                            
+                            // 同じtimeの場合は上書き、新しいtimeの場合は追加
+                            if (normalizedTime === window.__lastCandleTime) {
+                                // 同じローソク足の更新（上書き）
+                                console.log('[Genspark] 🔄 同じローソク足を更新（上書き）:', normalizedTime);
+                                candlestickSeries.update(newBar);
+                            } else if (normalizedTime > window.__lastCandleTime) {
+                                // 新しいローソク足の追加
+                                console.log('[Genspark] 🆕 新しいローソク足を追加:', {
+                                    time: new Date(normalizedTime * 1000).toISOString(),
+                                    close: latestCandle.close.toFixed(2),
+                                    rsi: latestCandle.rsi ? latestCandle.rsi.toFixed(1) : 'N/A'
+                                });
+                                candlestickSeries.update(newBar);
+                                window.__lastCandleTime = normalizedTime;
+                                lastCandleTimestamp = normalizedTime;
+                                
+                                // candlesDataWithRSIにも追加
+                                candlesDataWithRSI.push({
+                                    timestamp: normalizedTime,
+                                    open: latestCandle.open,
+                                    high: latestCandle.high,
+                                    low: latestCandle.low,
+                                    close: latestCandle.close,
+                                    rsi: latestCandle.rsi
+                                });
+                                
+                                // MACDも更新（最新データのみ再計算）
+                                if (candlesDataWithRSI.length > 26) {
+                                    const recentCandles = candlesDataWithRSI.slice(-100); // 最新100本でMACD計算
+                                    const macdData = calculateMACD(recentCandles);
+                                    const latestMACD = macdData[macdData.length - 1];
+                                    
+                                    macdLineSeries.update({ time: latestMACD.time, value: latestMACD.macd });
+                                    macdSignalSeries.update({ time: latestMACD.time, value: latestMACD.signal });
+                                    macdHistogramSeries.update({ 
+                                        time: latestMACD.time, 
+                                        value: latestMACD.histogram,
+                                        color: latestMACD.histogram >= 0 ? '#26a69a' : '#ef5350'
+                                    });
+                                }
+                                
+                                // サインを更新
+                                await loadUserSignals();
+                            } else {
+                                // 古いデータ（スキップ）
+                                console.log('[Genspark] ⏪ 古いローソク足（スキップ）:', normalizedTime, '<', window.__lastCandleTime);
+                            }
                         }
                     }
                     
