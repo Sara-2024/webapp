@@ -2968,15 +2968,32 @@ app.get('/trade', async (c) => {
 
                 console.log('[Chart] 重複除去後:', uniqueCandles.length, '本');
 
-                // 【修正: 外れ値フィルタは初回ロード時は使用しない】
-                // 理由: 最新の高値データが除外され、古い価格帯に戻ってしまう
-                // update()のみで更新する方式なので、初回の全データを信頼する
-                candlesDataWithRSI = uniqueCandles;
-                
-                console.log('[Chart] 外れ値フィルタ: 無効（初回ロードは全データを信頼）');
-                if (uniqueCandles.length > 0) {
-                    const prices = uniqueCandles.map(c => c.close);
-                    console.log('[Chart] 最終データ範囲:', Math.min(...prices).toFixed(2), '-', Math.max(...prices).toFixed(2));
+                // 【修正3: 外れ値フィルタ（±20%）】
+                if (uniqueCandles.length > 10) {
+                    const sortedPrices = uniqueCandles.map(c => c.close).sort((a, b) => a - b);
+                    const median = sortedPrices[Math.floor(sortedPrices.length / 2)];
+                    const lowerBound = median * 0.8;
+                    const upperBound = median * 1.2;
+                    
+                    console.log('[Chart] 外れ値フィルタ: 中央値', median.toFixed(2), '許容範囲', lowerBound.toFixed(2), '-', upperBound.toFixed(2));
+                    
+                    const beforeCount = uniqueCandles.length;
+                    const filteredCandles = [];
+                    const outliers = [];
+                    
+                    for (const candle of uniqueCandles) {
+                        if (candle.close >= lowerBound && candle.close <= upperBound) {
+                            filteredCandles.push(candle);
+                        } else {
+                            outliers.push(candle);
+                            console.log('[Chart] ⚠️ 外れ値除外:', 'time:', candle.timestamp, 'close:', candle.close.toFixed(2));
+                        }
+                    }
+                    
+                    console.log('[Chart] 外れ値除外:', beforeCount - filteredCandles.length, '本');
+                    candlesDataWithRSI = filteredCandles;
+                } else {
+                    candlesDataWithRSI = uniqueCandles;
                 }
 
                 // ローソク足データをLightweight Charts形式に変換
