@@ -896,18 +896,6 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
 }
 
 async function generateSingleCandle(db: D1Database, candleTime: number, previousClose: number): Promise<{close: number}> {
-  // 🎯 価格範囲の制限（チャートが飛ばないように）
-  const MIN_PRICE = 4500
-  const MAX_PRICE = 5500
-  const TARGET_PRICE = 5000  // 中心価格
-  
-  // previousCloseが範囲外なら強制的に範囲内に戻す
-  if (previousClose < MIN_PRICE) {
-    previousClose = MIN_PRICE + 50
-  } else if (previousClose > MAX_PRICE) {
-    previousClose = MAX_PRICE - 50
-  }
-  
   const open = previousClose
 
   // 最小変動幅を保証（0.1% = 5ドル程度）
@@ -930,22 +918,12 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     cumulativeChange = ((newest.close - oldest.open) / oldest.open) * 100  // %
   }
   
-  // 🎯 中心価格からの乖離を計算
-  const deviationFromCenter = ((open - TARGET_PRICE) / TARGET_PRICE) * 100  // %
-  
   // トレンド方向の決定
-  // 1. 価格が中心から大きく離れている場合は強制的に戻す
-  // 2. 累積変動が+3%以上なら80%の確率で下降、-3%以下なら80%の確率で上昇
-  // 3. それ以外は50%の確率でランダム
+  // 累積変動が+3%以上なら80%の確率で下降、-3%以下なら80%の確率で上昇
+  // それ以外は50%の確率でランダム
   let trendDirection = Math.random() > 0.5 ? 1 : -1
   
-  if (deviationFromCenter > 5.0) {
-    // 中心より5%以上高い → 90%の確率で下降
-    trendDirection = Math.random() < 0.9 ? -1 : 1
-  } else if (deviationFromCenter < -5.0) {
-    // 中心より5%以上低い → 90%の確率で上昇
-    trendDirection = Math.random() < 0.9 ? 1 : -1
-  } else if (cumulativeChange > 3.0) {
+  if (cumulativeChange > 3.0) {
     // 過度な上昇 → 下降方向へ誘導
     trendDirection = Math.random() < 0.8 ? -1 : 1
   } else if (cumulativeChange < -3.0) {
@@ -986,13 +964,6 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     }
   }
   
-  // 🎯 価格範囲の強制（範囲外にならないように）
-  if (close < MIN_PRICE) {
-    close = MIN_PRICE + Math.random() * 10
-  } else if (close > MAX_PRICE) {
-    close = MAX_PRICE - Math.random() * 10
-  }
-  
   // high/lowも制限
   if (high > open + maxChange) {
     high = open + maxChange
@@ -1000,10 +971,6 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   if (low < open - maxChange) {
     low = open - maxChange
   }
-  
-  // 🎯 high/lowも価格範囲内に制限
-  if (high > MAX_PRICE) high = MAX_PRICE
-  if (low < MIN_PRICE) low = MIN_PRICE
 
   // 最小変動幅を強制（平らなローソク足を防ぐ）
   // 最大変動制限後に確認し、必要に応じて調整
@@ -2791,8 +2758,8 @@ app.get('/trade', async (c) => {
                 },
                 rightPriceScale: {
                     scaleMargins: {
-                        top: 0.05,    // 上部5%のマージン（価格範囲が狭いので縮小）
-                        bottom: 0.05, // 下部5%のマージン
+                        top: 0.1,    // 上部10%のマージン
+                        bottom: 0.1, // 下部10%のマージン
                     },
                     borderVisible: false,
                 },
@@ -2831,13 +2798,6 @@ app.get('/trade', async (c) => {
                 borderVisible: false,
                 wickUpColor: '#26a69a',
                 wickDownColor: '#ef5350',
-                priceScaleId: 'right',
-                autoscaleInfoProvider: () => ({
-                    priceRange: {
-                        minValue: 4500,
-                        maxValue: 5500,
-                    },
-                }),
             });
             
             // MACDチャート
@@ -2874,11 +2834,10 @@ app.get('/trade', async (c) => {
                 if (param.time) {
                     macdChart.timeScale().scrollToPosition(0, false);
                     
-                    // RSI値を表示（クロスヘア位置のローソク足を検索）
+                    // RSI値を表示
                     const data = param.seriesData.get(candlestickSeries);
-                    if (data && candlesDataWithRSI && candlesDataWithRSI.length > 0) {
-                        // param.timeはUnixタイムスタンプ、candlesDataWithRSIのtimestampと比較
-                        const candle = candlesDataWithRSI.find(c => c.timestamp === param.time);
+                    if (data && window.candlesDataWithRSI) {
+                        const candle = window.candlesDataWithRSI.find(c => c.timestamp === param.time);
                         if (candle && candle.rsi !== undefined) {
                             const rsiElement = document.getElementById('gold10RSI');
                             if (rsiElement) {
@@ -3022,19 +2981,20 @@ app.get('/trade', async (c) => {
                         to: latestTime
                     });
                     
-                    // 【修正】価格範囲は autoscaleInfoProvider で固定済み
-                    // autoScale は true のままで OK（autoscaleInfoProvider が優先される）
+                    // 価格軸を表示データの範囲に合わせて調整
+                    // autoScaleとfitContentで自動調整（実際のローソク足の価格範囲に合わせる）
                     chart.priceScale('right').applyOptions({ 
+                        autoScale: true,
                         scaleMargins: {
-                            top: 0.05,    // 上部5%のマージン
-                            bottom: 0.05, // 下部5%のマージン
+                            top: 0.1,    // 上部10%のマージン
+                            bottom: 0.1, // 下部10%のマージン
                         },
                     });
                     
                     // 時間軸をデータに合わせる
                     chart.timeScale().fitContent();
                     
-                    // MACDチャートは自動スケール（独立した値域のため）
+                    // MACDチャートも同様に調整
                     macdChart.priceScale('right').applyOptions({ 
                         autoScale: true,
                         scaleMargins: {
@@ -3711,9 +3671,6 @@ app.get('/trade', async (c) => {
                                         low: latestCandle.low,
                                         close: latestCandle.close
                                     });
-                                    
-                                    // 【修正】価格範囲は autoscaleInfoProvider で自動的に固定される
-                                    
                                     console.log('[Genspark] ✅ 新しいローソク足をチャートに追加:', latestCandle.timestamp);
                                 } else {
                                     console.log('[Genspark] ⏭️ ローソク足は既に存在（スキップ）:', latestCandle.timestamp);
@@ -3748,10 +3705,6 @@ app.get('/trade', async (c) => {
             // 非同期処理を開始するが、完了を待たない（ノンブロッキング）
             (async () => {
                 try {
-                    // 【修正】ユーザー画面から管理者APIを呼ばない
-                    // 予約サインの自動実行は管理画面専用（/admin）
-                    // ユーザー画面では予約サイン実行を行わず、403エラーを回避
-                    
                     // 現在価格を送信して正確な決済を行う
                     console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
                     const autoCloseResponse = await axios.post('/api/trade/auto-close-expired', {
