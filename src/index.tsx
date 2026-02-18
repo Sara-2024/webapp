@@ -1353,11 +1353,28 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     prices.push(currentPrice)
   }
   
-  // 30秒足の四本値を計算
+  // 30秒足の四本値を計算（ヒゲなし版）
   const open = basePrice // Next_Open = Previous_Close（前のcloseと完全一致）
   const close = prices[prices.length - 1]
-  const high = Math.max(open, close, ...prices) // open, close, 全pricesの最大値
-  const low = Math.min(open, close, ...prices)  // open, close, 全pricesの最小値
+  
+  // ヒゲなしルール適用
+  // 陽線: high=close, low=open
+  // 陰線: high=open, low=close
+  // 同値: high=low=open=close
+  let high, low
+  if (close > open) {
+    // 陽線
+    high = close
+    low = open
+  } else if (close < open) {
+    // 陰線
+    high = open
+    low = close
+  } else {
+    // 同値
+    high = open
+    low = open
+  }
   
   // DBに保存
   const insertResult = await c.env.DB.prepare(`
