@@ -98,7 +98,7 @@ async function getGold10Price(db: D1Database): Promise<number> {
 }
 
 // キャッシュ用の価格データ
-let cachedGoldPrice = 4950.0
+let cachedGoldPrice = 3168.48
 let lastPriceUpdate = 0
 const PRICE_CACHE_DURATION = 30000 // 30秒間キャッシュ（30秒ごとに実価格取得）
 
@@ -1257,8 +1257,8 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   
   const recent = recentCandles.results as any[]
   
-  // 初期価格または連続価格
-  let basePrice = prevCandle ? prevCandle.close : 4925.0
+  // 初期価格または連続価格（3168.48ドルから開始）
+  let basePrice = prevCandle ? prevCandle.close : 3168.48
   
   // 【慣性導入】前の足の方向を判定
   let prevDirection = 0 // 0: 初回, 1: 陽線, -1: 陰線
@@ -1312,14 +1312,14 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     }
   }
   
-  // 【慣性導入】ボラティリティは過去平均の80-120%の範囲で徐々に変化
-  const targetVolatility = avgVolatility * (0.8 + Math.random() * 0.4)
-  const volatility = Math.max(0.02, Math.min(0.15, targetVolatility))
+  // 【修正】ボラティリティを0.3-0.8%に設定（3168.48ドル基準で約9.5-25.3ドル）
+  const baseVol = basePrice * (0.003 + Math.random() * 0.005) // 0.3-0.8%
+  const volatility = Math.max(baseVol * 0.8, Math.min(baseVol * 1.2, targetVolatility))
   
   // 【慣性導入】トレンドの加速度（序盤は弱く、中盤で強く、終盤でまた弱める）
   for (let i = 0; i < 30; i++) {
-    // 市場変動成分（平均回帰）
-    const meanReversion = (4925 - currentPrice) * 0.001 // 中心価格への微弱な引力
+    // 市場変動成分（平均回帰: 3300ドルを中心に）
+    const meanReversion = (3300 - currentPrice) * 0.001 // 中心価格への微弱な引力
     
     // 【慣性導入】トレンド成分：序盤・終盤は弱く、中盤は強い
     const progress = i / 30
@@ -1347,8 +1347,8 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     // 次の価格
     currentPrice = currentPrice + meanReversion + trendComponent + randomWalk + userImpact
     
-    // 価格範囲制限を削除：自然な市場価格変動を許可
-    // 旧コード: currentPrice = Math.max(4900, Math.min(4945, currentPrice))
+    // 価格範囲制限：3000-3500ドルに固定
+    currentPrice = Math.max(3000, Math.min(3500, currentPrice))
     
     prices.push(currentPrice)
   }
