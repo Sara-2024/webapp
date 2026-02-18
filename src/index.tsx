@@ -3015,6 +3015,8 @@ app.get('/trade', async (c) => {
                     candlestickSeries.setData(candleData);
                     isChartInitialized = true;
                     lastCandleTimestamp = candleData[candleData.length - 1].time;
+                    // window.__lastCandleTimeも同期
+                    window.__lastCandleTime = lastCandleTimestamp;
                     
                     // MACDデータを計算して表示
                     const macdData = calculateMACD(candles);
@@ -3698,6 +3700,14 @@ app.get('/trade', async (c) => {
                         // Update currentPrice for trading
                         currentPrice = latestCandle.close;
                         
+                        // デバッグログ: タイムスタンプ比較
+                        console.log('[Genspark] 📊 タイムスタンプ比較:', {
+                            latestCandle: latestCandle.timestamp,
+                            lastCandleTime: window.__lastCandleTime,
+                            isNew: latestCandle.timestamp > window.__lastCandleTime,
+                            diff: latestCandle.timestamp - window.__lastCandleTime
+                        });
+                        
                         // If this is a new candle, update the chart
                         if (latestCandle.timestamp > window.__lastCandleTime) {
                             console.log('[Genspark] 🆕 新しいローソク足検出:', {
@@ -3765,6 +3775,8 @@ app.get('/trade', async (c) => {
                                     }));
                                     
                                     candlestickSeries.setData(refreshData);
+                                    lastCandleTimestamp = refreshData[refreshData.length - 1].time;
+                                    window.__lastCandleTime = lastCandleTimestamp;
                                     
                                     // MACDも再計算
                                     const macdData = calculateMACD(candlesDataWithRSI);
@@ -3781,16 +3793,18 @@ app.get('/trade', async (c) => {
                                     macdChart.timeScale().fitContent();
                                     
                                     console.log('[Genspark] ✅ チャート全体を更新:', refreshData.length, '本');
+                                    console.log('[Genspark] 最新timestamp:', window.__lastCandleTime, new Date(window.__lastCandleTime * 1000).toISOString());
                                     
                                 } catch (refreshError) {
                                     console.error('[Genspark] チャート更新エラー:', refreshError);
                                 }
                             }
                             
-                            window.__lastCandleTime = latestCandle.timestamp;
-                            
                             // サインを更新
                             await loadUserSignals();
+                        } else {
+                            // 新しいローソク足がない場合もログ出力
+                            console.log('[Genspark] ローソク足は最新:', latestCandle.timestamp, '現在のlastTime:', window.__lastCandleTime);
                         }
                     }
                     
