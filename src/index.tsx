@@ -2160,6 +2160,7 @@ app.get('/', (c) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FXデモトレーディングプラットフォーム - ログイン</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -2245,6 +2246,7 @@ app.get('/admin-login', (c) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理者ログイン</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -2346,6 +2348,7 @@ app.get('/trade', async (c) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>メンテナンス中 - GOLD LABO</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -2425,6 +2428,7 @@ app.get('/trade', async (c) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GOLD LABO</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <!-- Lightweight Charts CDN -->
@@ -2775,11 +2779,15 @@ app.get('/trade', async (c) => {
                     mode: LightweightCharts.CrosshairMode.Normal,
                 },
                 rightPriceScale: {
+                    autoScale: false,  // 自動スケールを無効化して価格範囲を固定
                     scaleMargins: {
-                        top: 0.1,    // 上部10%のマージン
-                        bottom: 0.1, // 下部10%のマージン
+                        top: 0.05,    // 上部5%のマージン（価格範囲が狭いので縮小）
+                        bottom: 0.05, // 下部5%のマージン
                     },
                     borderVisible: false,
+                    // 価格範囲を4500-5500に固定
+                    mode: LightweightCharts.PriceScaleMode.Normal,
+                    // 表示範囲の初期設定は後で setVisibleLogicalRange() で設定
                 },
                 timeScale: {
                     timeVisible: false,
@@ -2816,6 +2824,16 @@ app.get('/trade', async (c) => {
                 borderVisible: false,
                 wickUpColor: '#26a69a',
                 wickDownColor: '#ef5350',
+                priceScaleId: 'right',  // 右側の価格スケールを使用
+            });
+            
+            // 価格範囲を4500-5500に固定
+            chart.priceScale('right').applyOptions({
+                autoScale: false,
+            });
+            chart.priceScale('right').setVisibleRange({
+                from: 4500,
+                to: 5500
             });
             
             // MACDチャート
@@ -2852,10 +2870,11 @@ app.get('/trade', async (c) => {
                 if (param.time) {
                     macdChart.timeScale().scrollToPosition(0, false);
                     
-                    // RSI値を表示
+                    // RSI値を表示（クロスヘア位置のローソク足を検索）
                     const data = param.seriesData.get(candlestickSeries);
-                    if (data && window.candlesDataWithRSI) {
-                        const candle = window.candlesDataWithRSI.find(c => c.timestamp === param.time);
+                    if (data && candlesDataWithRSI && candlesDataWithRSI.length > 0) {
+                        // param.timeはUnixタイムスタンプ、candlesDataWithRSIのtimestampと比較
+                        const candle = candlesDataWithRSI.find(c => c.timestamp === param.time);
                         if (candle && candle.rsi !== undefined) {
                             const rsiElement = document.getElementById('gold10RSI');
                             if (rsiElement) {
@@ -2999,20 +3018,24 @@ app.get('/trade', async (c) => {
                         to: latestTime
                     });
                     
-                    // 価格軸を表示データの範囲に合わせて調整
-                    // autoScaleとfitContentで自動調整（実際のローソク足の価格範囲に合わせる）
+                    // 【修正】価格範囲を4500-5500に固定維持（autoScaleを無効に保つ）
                     chart.priceScale('right').applyOptions({ 
-                        autoScale: true,
+                        autoScale: false,  // 固定範囲を維持
                         scaleMargins: {
-                            top: 0.1,    // 上部10%のマージン
-                            bottom: 0.1, // 下部10%のマージン
+                            top: 0.05,    // 上部5%のマージン
+                            bottom: 0.05, // 下部5%のマージン
                         },
+                    });
+                    // 価格範囲を再設定（4500-5500に固定）
+                    chart.priceScale('right').setVisibleRange({
+                        from: 4500,
+                        to: 5500
                     });
                     
                     // 時間軸をデータに合わせる
                     chart.timeScale().fitContent();
                     
-                    // MACDチャートも同様に調整
+                    // MACDチャートは自動スケール（独立した値域のため）
                     macdChart.priceScale('right').applyOptions({ 
                         autoScale: true,
                         scaleMargins: {
@@ -3689,6 +3712,13 @@ app.get('/trade', async (c) => {
                                         low: latestCandle.low,
                                         close: latestCandle.close
                                     });
+                                    
+                                    // 【修正】新しいローソク足追加後に価格範囲を4500-5500に再固定
+                                    chart.priceScale('right').setVisibleRange({
+                                        from: 4500,
+                                        to: 5500
+                                    });
+                                    
                                     console.log('[Genspark] ✅ 新しいローソク足をチャートに追加:', latestCandle.timestamp);
                                 } else {
                                     console.log('[Genspark] ⏭️ ローソク足は既に存在（スキップ）:', latestCandle.timestamp);
@@ -3723,12 +3753,9 @@ app.get('/trade', async (c) => {
             // 非同期処理を開始するが、完了を待たない（ノンブロッキング）
             (async () => {
                 try {
-                    // 予約サインの自動実行（管理画面が開いていなくても実行）
-                    try {
-                        await axios.post('/api/admin/gold10/execute-reservations');
-                    } catch (err) {
-                        // 認証エラーは無視（通常ユーザーは権限なし）
-                    }
+                    // 【修正】ユーザー画面から管理者APIを呼ばない
+                    // 予約サインの自動実行は管理画面専用（/admin）
+                    // ユーザー画面では予約サイン実行を行わず、403エラーを回避
                     
                     // 現在価格を送信して正確な決済を行う
                     console.log('[Genspark] 自動決済チェック: currentPrice =', currentPrice);
@@ -4886,6 +4913,7 @@ app.get('/admin', (c) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理者ダッシュボード</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
