@@ -846,12 +846,13 @@ app.get('/api/gold10/candles', async (c) => {
   let sortedCandles = candles.results.reverse()
   
   // 🚫 ヒゲなしローソク足を除外（high === max(open,close) && low === min(open,close)）
+  // これは古いデプロイ（奇数番号）が生成した間違ったローソク足
   sortedCandles = sortedCandles.filter((candle: any) => {
     const maxBody = Math.max(candle.open, candle.close)
     const minBody = Math.min(candle.open, candle.close)
-    // ヒゲがある = high > maxBody または low < minBody
-    const hasWick = candle.high > maxBody || candle.low < minBody
-    return hasWick  // ヒゲありのみ表示
+    // ヒゲなし = high == maxBody かつ low == minBody
+    const isNoWick = Math.abs(candle.high - maxBody) < 0.01 && Math.abs(candle.low - minBody) < 0.01
+    return !isNoWick  // ヒゲなしを除外（ヒゲありのみ表示）
   })
   
   return c.json(sortedCandles)
@@ -1023,9 +1024,18 @@ app.get('/api/gold10/candles/latest', async (c) => {
     LIMIT ?
   `).bind(now, limit).all()
 
+  // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）
+  const filteredCandles = candles.results.filter((candle: any) => {
+    const maxBody = Math.max(candle.open, candle.close)
+    const minBody = Math.min(candle.open, candle.close)
+    // ヒゲなし = high == maxBody かつ low == minBody
+    const isNoWick = Math.abs(candle.high - maxBody) < 0.01 && Math.abs(candle.low - minBody) < 0.01
+    return !isNoWick  // ヒゲなしを除外
+  })
+
   // Calculate countdown
   // 🔒 現在時刻以前の最新ローソク足のみを取得（未来のローソク足は除外）
-  const latestCandle = candles.results[0]  // すでにクエリでフィルタ済み
+  const latestCandle = filteredCandles[0]  // フィルタ済みの最新ローソク足
   
   // 次のローソク足の時刻を計算（30秒刻み）
   // now を 30秒単位に切り捨て → 30秒足す = 次の30秒境界
@@ -1050,7 +1060,7 @@ app.get('/api/gold10/candles/latest', async (c) => {
   console.log(`[Server] Countdown: now=${now}, latestCandle=${latestCandle?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
 
   return c.json({
-    candles: candles.results.reverse(),
+    candles: filteredCandles.reverse(),
     nextCandleTime: nextCandleTime,
     secondsUntilNext: secondsUntilNext,
     serverTime: now
