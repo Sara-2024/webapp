@@ -846,13 +846,13 @@ app.get('/api/gold10/candles', async (c) => {
   let sortedCandles = candles.results.reverse()
   
   // 🚫 ヒゲなしローソク足を除外（high === max(open,close) && low === min(open,close)）
-  // これは古いデプロイ（奇数番号）が生成した間違ったローソク足
+  // これは古いno-wickデプロイが生成した間違ったローソク足
   sortedCandles = sortedCandles.filter((candle: any) => {
     const maxBody = Math.max(candle.open, candle.close)
     const minBody = Math.min(candle.open, candle.close)
-    // ヒゲなし = high == maxBody かつ low == minBody
-    const isNoWick = Math.abs(candle.high - maxBody) < 0.01 && Math.abs(candle.low - minBody) < 0.01
-    return !isNoWick  // ヒゲなしを除外（ヒゲありのみ表示）
+    // ヒゲあり = high > maxBody または low < minBody
+    const hasWick = candle.high > maxBody || candle.low < minBody
+    return hasWick  // ヒゲありのみ表示
   })
   
   return c.json(sortedCandles)
