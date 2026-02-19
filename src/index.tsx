@@ -3014,6 +3014,20 @@ app.get('/trade', async (c) => {
                     candlesDataWithRSI = uniqueCandles;
                 }
 
+                // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）
+                const beforeNoWickFilter = candlesDataWithRSI.length;
+                candlesDataWithRSI = candlesDataWithRSI.filter(c => {
+                    const maxBody = Math.max(c.open, c.close);
+                    const minBody = Math.min(c.open, c.close);
+                    // ヒゲなし = high == maxBody かつ low == minBody
+                    const isNoWick = Math.abs(c.high - maxBody) < 0.01 && Math.abs(c.low - minBody) < 0.01;
+                    if (isNoWick) {
+                        console.log('[Chart] 🚫 NO-WICK除外:', 'time:', c.timestamp, 'O:', c.open.toFixed(2), 'H:', c.high.toFixed(2), 'L:', c.low.toFixed(2), 'C:', c.close.toFixed(2));
+                    }
+                    return !isNoWick;  // ヒゲなしを除外
+                });
+                console.log('[Chart] NO-WICK除外:', beforeNoWickFilter - candlesDataWithRSI.length, '本');
+
                 // ローソク足データをLightweight Charts形式に変換
                 const candleData = candlesDataWithRSI.map(c => ({
                     time: c.timestamp,
@@ -3729,6 +3743,22 @@ app.get('/trade', async (c) => {
                         
                         // 【修正: update()のみで更新、全データ再取得は禁止】
                         if (candlestickSeries) {
+                            // 🚫 ヒゲなしローソク足をスキップ
+                            const maxBody = Math.max(latestCandle.open, latestCandle.close);
+                            const minBody = Math.min(latestCandle.open, latestCandle.close);
+                            const isNoWick = Math.abs(latestCandle.high - maxBody) < 0.01 && Math.abs(latestCandle.low - minBody) < 0.01;
+                            
+                            if (isNoWick) {
+                                console.log('[Genspark] 🚫 NO-WICK ローソク足をスキップ:', {
+                                    time: latestCandle.timestamp,
+                                    open: latestCandle.open.toFixed(2),
+                                    high: latestCandle.high.toFixed(2),
+                                    low: latestCandle.low.toFixed(2),
+                                    close: latestCandle.close.toFixed(2)
+                                });
+                                return;  // ヒゲなしローソク足は更新しない
+                            }
+                            
                             // time単位統一（ミリ秒→秒）
                             let normalizedTime = latestCandle.timestamp;
                             if (latestCandle.timestamp > 100000000000) {
