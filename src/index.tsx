@@ -2671,7 +2671,7 @@ app.get('/trade', async (c) => {
     <!-- メインコンテンツ: レスポンシブレイアウト -->
     <div class="flex flex-col lg:flex-row h-[calc(100vh-72px)]">
         <!-- チャートエリア（PC: 左2/3、スマホ: 上半分） -->
-        <div class="w-full lg:w-2/3 bg-white p-2 sm:p-4 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 lg:overflow-y-auto">
+        <div id="chartArea" class="w-full lg:w-2/3 bg-white p-2 sm:p-4 flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 lg:overflow-y-auto">
             <div class="mb-2 sm:mb-4">
                 <h2 class="text-lg sm:text-2xl font-bold text-gray-800 mb-1 sm:mb-2">
                     <i class="fas fa-chart-candlestick mr-1 sm:mr-2 text-yellow-600"></i>
@@ -3816,7 +3816,7 @@ app.get('/trade', async (c) => {
             
             // PC版のみ: チャートエリアを最下部にスクロール
             if (showChart && window.innerWidth >= 1024) {
-                const chartArea = document.querySelector('.lg\\:overflow-y-auto');
+                const chartArea = document.getElementById('chartArea');
                 if (chartArea) {
                     setTimeout(() => {
                         chartArea.scrollTop = chartArea.scrollHeight;
