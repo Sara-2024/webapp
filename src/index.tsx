@@ -2930,12 +2930,13 @@ app.get('/trade', async (c) => {
                 timeScale: {
                     timeVisible: false,
                     secondsVisible: false,
-                    rightOffset: 60,  // 右側に十分な余白を作って凡例と価格表示が完全に見えるように
+                    rightOffset: 60,  // 右側に60本分の余白
                     barSpacing: 6,
                     fixLeftEdge: false,
-                    fixRightEdge: false,
-                    lockVisibleTimeRangeOnResize: false,
+                    fixRightEdge: true,  // 右端を固定して余白を維持
+                    lockVisibleTimeRangeOnResize: true,  // リサイズ時に表示範囲を維持
                     rightBarStaysOnScroll: true,
+                    shiftVisibleRangeOnNewBar: true,  // 新しいローソク足で自動スクロール
                     visible: false,
                 },
                 localization: {
@@ -5680,7 +5681,11 @@ app.get('/admin', (c) => {
                     timeScale: { 
                         timeVisible: true, 
                         secondsVisible: true,
-                        rightOffset: 60  // 右側に十分な余白を作って凡例と価格表示が完全に見えるように
+                        rightOffset: 60,
+                        fixRightEdge: true,
+                        lockVisibleTimeRangeOnResize: true,
+                        rightBarStaysOnScroll: true,
+                        shiftVisibleRangeOnNewBar: true
                     }
                 });
                 
@@ -5699,7 +5704,11 @@ app.get('/admin', (c) => {
                     timeScale: { 
                         timeVisible: true, 
                         secondsVisible: true,
-                        rightOffset: 60  // 右側に十分な余白を作って凡例と価格表示が完全に見えるように
+                        rightOffset: 60,
+                        fixRightEdge: true,
+                        lockVisibleTimeRangeOnResize: true,
+                        rightBarStaysOnScroll: true,
+                        shiftVisibleRangeOnNewBar: true
                     }
                 });
                 
