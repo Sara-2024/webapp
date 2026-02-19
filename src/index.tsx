@@ -5,6 +5,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 
 type Bindings = {
   DB: D1Database
+  KV: KVNamespace
   TWELVE_DATA_API_KEY?: string
 }
 
@@ -858,6 +859,42 @@ app.get('/api/gold10/candles', async (c) => {
   return c.json(sortedCandles)
 })
 
+// 🔒 KV排他ロック実装（Cloudflare Pages Worker の同時生成を防止）
+async function tryAcquireLock(kv: KVNamespace, key: string, ttlSeconds: number = 5): Promise<string | null> {
+  try {
+    const token = crypto.randomUUID()
+    // getWithMetadata で既存ロックをチェック
+    const existing = await kv.getWithMetadata(key)
+    if (existing.value !== null) {
+      // 既にロックが存在する
+      return null
+    }
+    // putで新しいロックを作成（expirationTtlは秒単位）
+    await kv.put(key, token, { expirationTtl: ttlSeconds })
+    // 再確認して競合がないか検証
+    const verify = await kv.get(key)
+    if (verify === token) {
+      return token
+    }
+    // 競合が発生した場合
+    return null
+  } catch (error) {
+    console.error('[KV Lock] tryAcquireLock failed:', error)
+    return null
+  }
+}
+
+async function releaseLock(kv: KVNamespace, key: string, token: string): Promise<void> {
+  try {
+    const current = await kv.get(key)
+    if (current === token) {
+      await kv.delete(key)
+    }
+  } catch (error) {
+    console.error('[KV Lock] releaseLock failed:', error)
+  }
+}
+
 // Server-side candle generation helper
 async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000)
@@ -1010,26 +1047,26 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
 
 // Get latest candles with countdown info
 app.get('/api/gold10/candles/latest', async (c) => {
+  let lockToken: string | null = null
+  
   try {
-    // Try to generate new candles if needed
-    await generateCandleIfNeeded(c.env.DB)
-    
-    const limit = parseInt(c.req.query('limit') || '100')
-    
-    // 🔒 現在時刻以前のローソク足のみを取得（未来のローソク足は除外）
     const now = Math.floor(Date.now() / 1000)
-    const candles = await c.env.DB.prepare(`
+    const limit = parseInt(c.req.query('limit') || '100')
+    const kv = c.env.KV
+    const db = c.env.DB
+    
+    // 🔒 Step 1: 読み取り専用で最新ローソク足を取得
+    const initialRead = await db.prepare(`
       SELECT timestamp, open, high, low, close, rsi FROM gold10_candles
       WHERE timestamp <= ?
       ORDER BY timestamp DESC
-      LIMIT ?
-    `).bind(now, limit).all()
-
-    // 生データを保存（内部ロジック用）
-    const rawCandles = candles.results || []
+      LIMIT 2
+    `).bind(now).all()
     
-    // ⚠️ 1) null/undefinedガード（絶対）
-    if (rawCandles.length === 0) {
+    const initialCandles = initialRead.results || []
+    
+    // データがない場合の早期リターン
+    if (initialCandles.length === 0) {
       console.warn('[Server] /api/gold10/candles/latest: no candles found')
       return c.json({
         ok: true,
@@ -1042,55 +1079,88 @@ app.get('/api/gold10/candles/latest', async (c) => {
         serverTime: now
       })
     }
-
-    // rawLatest と prev を取得
-    const rawLatest = rawCandles[0]
+    
+    const rawLatest = initialCandles[0]
+    const timeSinceLast = now - rawLatest.timestamp
+    
+    // 🔒 Step 2: ロック取得を試みる（生成が必要な場合のみ）
+    if (timeSinceLast >= 30) {
+      lockToken = await tryAcquireLock(kv, 'gold10:genlock', 5)
+      
+      if (lockToken) {
+        console.log('[Server] 🔒 Lock acquired, generating candles...')
+        await generateCandleIfNeeded(db)
+      } else {
+        console.warn('[Server] ⚠️ Lock busy, skipping generation')
+      }
+    }
+    
+    // 🔒 Step 3: 生成後（またはスキップ後）に最新データを再取得
+    const finalRead = await db.prepare(`
+      SELECT timestamp, open, high, low, close, rsi FROM gold10_candles
+      WHERE timestamp <= ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).bind(now, limit).all()
+    
+    const rawCandles = finalRead.results || []
+    
+    if (rawCandles.length === 0) {
+      return c.json({
+        ok: true,
+        candles: [],
+        latestCandle: null,
+        skipped: true,
+        reason: 'no_candles',
+        nextCandleTime: Math.floor(now / 30) * 30 + 30,
+        secondsUntilNext: 0,
+        serverTime: now
+      })
+    }
+    
+    const finalLatest = rawCandles[0]
     const prev = rawCandles[1] ?? null
     
-    // 🚨 2) 異常判定（ギャップ、急変、欠損）
+    // 🚨 異常判定（ギャップ、急変、欠損）
     let isInvalid = false
     let invalidReason = ''
     
-    // 必須フィールドチェック
-    if (rawLatest.open == null || rawLatest.close == null || rawLatest.timestamp == null) {
+    if (finalLatest.open == null || finalLatest.close == null || finalLatest.timestamp == null) {
       isInvalid = true
       invalidReason = 'missing_fields'
-      console.warn('[Server] ⚠️ Invalid latest: missing fields', rawLatest)
+      console.warn('[Server] ⚠️ Invalid latest: missing fields', finalLatest)
     }
     
-    // ギャップチェック（prevが存在する場合のみ）
-    if (!isInvalid && prev && Math.abs(rawLatest.open - prev.close) > 0.01) {
+    if (!isInvalid && prev && Math.abs(finalLatest.open - prev.close) > 0.01) {
       isInvalid = true
       invalidReason = 'gap_detected'
       console.warn('[Server] 🚫 Invalid latest: gap detected', {
-        latestOpen: rawLatest.open,
+        latestOpen: finalLatest.open,
         prevClose: prev.close,
-        gap: (rawLatest.open - prev.close).toFixed(2)
+        gap: (finalLatest.open - prev.close).toFixed(2)
       })
     }
     
-    // 異常ジャンプチェック（prevが存在する場合のみ）
-    if (!isInvalid && prev && Math.abs(rawLatest.close - prev.close) > 50) {
+    if (!isInvalid && prev && Math.abs(finalLatest.close - prev.close) > 50) {
       isInvalid = true
       invalidReason = 'abnormal_jump'
       console.warn('[Server] 🚫 Invalid latest: abnormal jump', {
-        latestClose: rawLatest.close,
+        latestClose: finalLatest.close,
         prevClose: prev.close,
-        jump: (rawLatest.close - prev.close).toFixed(2)
+        jump: (finalLatest.close - prev.close).toFixed(2)
       })
     }
-
-    // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）- 表示用のみ
+    
+    // ヒゲなしローソク足を除外（表示用）
     const filteredCandles = rawCandles.filter((candle: any) => {
       const bodyMax = Math.max(candle.open, candle.close)
       const bodyMin = Math.min(candle.open, candle.close)
-      // ヒゲなし = high == maxBody かつ low == minBody
       const isNoWick = Math.abs(candle.high - bodyMax) < 0.01 && Math.abs(candle.low - bodyMin) < 0.01
-      return !isNoWick  // ヒゲなしを除外
+      return !isNoWick
     })
     
-    // 🚨 3) 無効なら「直前を返す」か「nullで返す」
-    let validLatest = rawLatest
+    // 無効ならprevまたはnullを返す
+    let validLatest = finalLatest
     let skipped = false
     
     if (isInvalid) {
@@ -1104,43 +1174,31 @@ app.get('/api/gold10/candles/latest', async (c) => {
       }
     }
     
-    // 次のローソク足の時刻を計算（30秒刻み）
+    // 次のローソク足の時刻を計算
     const next30SecBoundary = Math.floor(now / 30) * 30 + 30
+    let nextCandleTime = validLatest ? validLatest.timestamp + 30 : next30SecBoundary
     
-    let nextCandleTime
-    if (validLatest) {
-      // 最新ローソク足（過去または現在）から30秒後
-      nextCandleTime = validLatest.timestamp + 30
-      
-      // もし計算結果が過去の場合は、次の30秒境界を使う
-      if (nextCandleTime <= now) {
-        nextCandleTime = next30SecBoundary
-      }
-    } else {
-      // ローソク足がない場合、次の30秒境界
+    if (nextCandleTime <= now) {
       nextCandleTime = next30SecBoundary
     }
     
     const secondsUntilNext = Math.max(0, nextCandleTime - now)
     
-    console.log(`[Server] Countdown: now=${now}, validLatest=${validLatest?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
-    console.log(`[Server] Raw candles: ${rawCandles.length}, Filtered candles: ${filteredCandles.length}, Skipped: ${skipped}`)
-
-    // 🚨 4) 正常ならそのまま返す、無効ならprev or null
+    console.log(`[Server] Final: now=${now}, validLatest=${validLatest?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}, lock=${lockToken ? 'acquired' : 'skipped'}`)
+    
     return c.json({
       ok: true,
       candles: filteredCandles.reverse(),
       latestCandle: validLatest,
-      skipped: skipped,
-      reason: skipped ? invalidReason : 'valid',
+      skipped: lockToken === null && timeSinceLast >= 30 ? true : skipped,
+      reason: lockToken === null && timeSinceLast >= 30 ? 'lock_busy' : (skipped ? invalidReason : 'valid'),
       nextCandleTime: nextCandleTime,
       secondsUntilNext: secondsUntilNext,
       serverTime: now
     })
-
+    
   } catch (error) {
     console.error('[Server] ❌ /api/gold10/candles/latest exception:', error)
-    // 例外でも 500 で落とさず、安全に返す
     const now = Math.floor(Date.now() / 1000)
     return c.json({
       ok: false,
@@ -1152,6 +1210,16 @@ app.get('/api/gold10/candles/latest', async (c) => {
       secondsUntilNext: 0,
       serverTime: now
     })
+  } finally {
+    // 🔒 Step 4: 必ずロックを解放
+    if (lockToken) {
+      try {
+        await releaseLock(c.env.KV, 'gold10:genlock', lockToken)
+        console.log('[Server] 🔓 Lock released')
+      } catch (err) {
+        console.error('[Server] Failed to release lock:', err)
+      }
+    }
   }
 })
 

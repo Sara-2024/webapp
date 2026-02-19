@@ -13,6 +13,13 @@
       "database_id": "458ccf16-7417-45ec-931c-e1c51453c2cf"
     }
   ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "8cc6377c9f304561b4782c36475c9ec9",
+      "preview_id": "d1f7087c4f7348c4bdfc16babf35ad3b"
+    }
+  ],
   // Twelve Data API Key (本番環境ではwrangler secret putで設定)
   "vars": {
     "TWELVE_DATA_API_KEY": ""
