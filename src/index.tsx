@@ -3761,32 +3761,6 @@ app.get('/trade', async (c) => {
                         
                         // 【修正: update()のみで更新、全データ再取得は禁止】
                         if (candlestickSeries && latestCandle.timestamp != null) {
-                                } else {
-                                    rsiElement.style.color = '#2962FF';
-                                }
-                            }
-                        }
-                        
-                        // Update price display
-                        const priceElement = document.getElementById('gold10Price');
-                        if (priceElement) {
-                            priceElement.textContent = '$' + latestCandle.close.toFixed(2);
-                        }
-                        
-                        // Update currentPrice for trading
-                        currentPrice = latestCandle.close;
-                        
-                        // デバッグログ: タイムスタンプ比較
-                        console.log('[Genspark] 📊 タイムスタンプ比較:', {
-                            latestCandle: latestCandle.timestamp,
-                            lastCandleTime: window.__lastCandleTime,
-                            isNew: latestCandle.timestamp > window.__lastCandleTime,
-                            isSame: latestCandle.timestamp === window.__lastCandleTime,
-                            diff: latestCandle.timestamp - window.__lastCandleTime
-                        });
-                        
-                        // 【修正: update()のみで更新、全データ再取得は禁止】
-                        if (candlestickSeries) {
                             // time単位統一（ミリ秒→秒）
                             let normalizedTime = latestCandle.timestamp;
                             if (latestCandle.timestamp > 100000000000) {
