@@ -1010,64 +1010,149 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
 
 // Get latest candles with countdown info
 app.get('/api/gold10/candles/latest', async (c) => {
-  // Try to generate new candles if needed
-  await generateCandleIfNeeded(c.env.DB)
-  
-  const limit = parseInt(c.req.query('limit') || '100')
-  
-  // 🔒 現在時刻以前のローソク足のみを取得（未来のローソク足は除外）
-  const now = Math.floor(Date.now() / 1000)
-  const candles = await c.env.DB.prepare(`
-    SELECT timestamp, open, high, low, close, rsi FROM gold10_candles
-    WHERE timestamp <= ?
-    ORDER BY timestamp DESC
-    LIMIT ?
-  `).bind(now, limit).all()
-
-  // 生データを保存（内部ロジック用）
-  const rawCandles = candles.results || []
-
-  // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）- 表示用のみ
-  const filteredCandles = rawCandles.filter((candle: any) => {
-    const maxBody = Math.max(candle.open, candle.close)
-    const minBody = Math.min(candle.open, candle.close)
-    // ヒゲなし = high == maxBody かつ low == minBody
-    const isNoWick = Math.abs(candle.high - maxBody) < 0.01 && Math.abs(candle.low - minBody) < 0.01
-    return !isNoWick  // ヒゲなしを除外
-  })
-
-  // ⚠️ 重要: latestCandle は必ずフィルタ前の生データから取得（undefined 回避）
-  const latestCandle = rawCandles[0] ?? null
-  
-  // 次のローソク足の時刻を計算（30秒刻み）
-  // now を 30秒単位に切り捨て → 30秒足す = 次の30秒境界
-  const next30SecBoundary = Math.floor(now / 30) * 30 + 30
-  
-  let nextCandleTime
-  if (latestCandle) {
-    // 最新ローソク足（過去または現在）から30秒後
-    nextCandleTime = latestCandle.timestamp + 30
+  try {
+    // Try to generate new candles if needed
+    await generateCandleIfNeeded(c.env.DB)
     
-    // もし計算結果が過去の場合は、次の30秒境界を使う
-    if (nextCandleTime <= now) {
+    const limit = parseInt(c.req.query('limit') || '100')
+    
+    // 🔒 現在時刻以前のローソク足のみを取得（未来のローソク足は除外）
+    const now = Math.floor(Date.now() / 1000)
+    const candles = await c.env.DB.prepare(`
+      SELECT timestamp, open, high, low, close, rsi FROM gold10_candles
+      WHERE timestamp <= ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).bind(now, limit).all()
+
+    // 生データを保存（内部ロジック用）
+    const rawCandles = candles.results || []
+    
+    // ⚠️ 1) null/undefinedガード（絶対）
+    if (rawCandles.length === 0) {
+      console.warn('[Server] /api/gold10/candles/latest: no candles found')
+      return c.json({
+        ok: true,
+        candles: [],
+        latestCandle: null,
+        skipped: true,
+        reason: 'no_candles',
+        nextCandleTime: Math.floor(now / 30) * 30 + 30,
+        secondsUntilNext: 0,
+        serverTime: now
+      })
+    }
+
+    // rawLatest と prev を取得
+    const rawLatest = rawCandles[0]
+    const prev = rawCandles[1] ?? null
+    
+    // 🚨 2) 異常判定（ギャップ、急変、欠損）
+    let isInvalid = false
+    let invalidReason = ''
+    
+    // 必須フィールドチェック
+    if (rawLatest.open == null || rawLatest.close == null || rawLatest.timestamp == null) {
+      isInvalid = true
+      invalidReason = 'missing_fields'
+      console.warn('[Server] ⚠️ Invalid latest: missing fields', rawLatest)
+    }
+    
+    // ギャップチェック（prevが存在する場合のみ）
+    if (!isInvalid && prev && Math.abs(rawLatest.open - prev.close) > 0.01) {
+      isInvalid = true
+      invalidReason = 'gap_detected'
+      console.warn('[Server] 🚫 Invalid latest: gap detected', {
+        latestOpen: rawLatest.open,
+        prevClose: prev.close,
+        gap: (rawLatest.open - prev.close).toFixed(2)
+      })
+    }
+    
+    // 異常ジャンプチェック（prevが存在する場合のみ）
+    if (!isInvalid && prev && Math.abs(rawLatest.close - prev.close) > 50) {
+      isInvalid = true
+      invalidReason = 'abnormal_jump'
+      console.warn('[Server] 🚫 Invalid latest: abnormal jump', {
+        latestClose: rawLatest.close,
+        prevClose: prev.close,
+        jump: (rawLatest.close - prev.close).toFixed(2)
+      })
+    }
+
+    // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）- 表示用のみ
+    const filteredCandles = rawCandles.filter((candle: any) => {
+      const bodyMax = Math.max(candle.open, candle.close)
+      const bodyMin = Math.min(candle.open, candle.close)
+      // ヒゲなし = high == maxBody かつ low == minBody
+      const isNoWick = Math.abs(candle.high - bodyMax) < 0.01 && Math.abs(candle.low - bodyMin) < 0.01
+      return !isNoWick  // ヒゲなしを除外
+    })
+    
+    // 🚨 3) 無効なら「直前を返す」か「nullで返す」
+    let validLatest = rawLatest
+    let skipped = false
+    
+    if (isInvalid) {
+      skipped = true
+      if (prev) {
+        validLatest = prev
+        console.warn(`[Server] ⚠️ Latest skipped (${invalidReason}), using prev candle instead`)
+      } else {
+        validLatest = null
+        console.warn(`[Server] ⚠️ Latest skipped (${invalidReason}), no prev available`)
+      }
+    }
+    
+    // 次のローソク足の時刻を計算（30秒刻み）
+    const next30SecBoundary = Math.floor(now / 30) * 30 + 30
+    
+    let nextCandleTime
+    if (validLatest) {
+      // 最新ローソク足（過去または現在）から30秒後
+      nextCandleTime = validLatest.timestamp + 30
+      
+      // もし計算結果が過去の場合は、次の30秒境界を使う
+      if (nextCandleTime <= now) {
+        nextCandleTime = next30SecBoundary
+      }
+    } else {
+      // ローソク足がない場合、次の30秒境界
       nextCandleTime = next30SecBoundary
     }
-  } else {
-    // ローソク足がない場合、次の30秒境界
-    nextCandleTime = next30SecBoundary
-  }
-  
-  const secondsUntilNext = Math.max(0, nextCandleTime - now)
-  
-  console.log(`[Server] Countdown: now=${now}, latestCandle=${latestCandle?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
-  console.log(`[Server] Raw candles: ${rawCandles.length}, Filtered candles: ${filteredCandles.length}`)
+    
+    const secondsUntilNext = Math.max(0, nextCandleTime - now)
+    
+    console.log(`[Server] Countdown: now=${now}, validLatest=${validLatest?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
+    console.log(`[Server] Raw candles: ${rawCandles.length}, Filtered candles: ${filteredCandles.length}, Skipped: ${skipped}`)
 
-  return c.json({
-    candles: filteredCandles.reverse(),
-    nextCandleTime: nextCandleTime,
-    secondsUntilNext: secondsUntilNext,
-    serverTime: now
-  })
+    // 🚨 4) 正常ならそのまま返す、無効ならprev or null
+    return c.json({
+      ok: true,
+      candles: filteredCandles.reverse(),
+      latestCandle: validLatest,
+      skipped: skipped,
+      reason: skipped ? invalidReason : 'valid',
+      nextCandleTime: nextCandleTime,
+      secondsUntilNext: secondsUntilNext,
+      serverTime: now
+    })
+
+  } catch (error) {
+    console.error('[Server] ❌ /api/gold10/candles/latest exception:', error)
+    // 例外でも 500 で落とさず、安全に返す
+    const now = Math.floor(Date.now() / 1000)
+    return c.json({
+      ok: false,
+      candles: [],
+      latestCandle: null,
+      skipped: true,
+      reason: 'exception',
+      nextCandleTime: Math.floor(now / 30) * 30 + 30,
+      secondsUntilNext: 0,
+      serverTime: now
+    })
+  }
 })
 
 // 最新のローソク足データを取得
@@ -3697,17 +3782,25 @@ app.get('/trade', async (c) => {
                     const response = await axios.get('/api/gold10/candles/latest?limit=100');
                     const data = response.data;
                     
-                    // ⚠️ 安全性チェック: データが存在するか確認
-                    if (!data || !data.candles || data.candles.length === 0) {
-                        console.log('[Genspark] ⚠️ ローソク足データが空です');
+                    // 🚨 サーバー側でスキップされた場合のログ
+                    if (data.skipped) {
+                        console.warn('[Genspark] ⚠️ Server skipped invalid candle:', data.reason);
+                        // サーバーが無効と判断した場合は何もしない
                         return;
                     }
                     
-                    const latestCandle = data.candles[data.candles.length - 1];
+                    // ⚠️ 安全性チェック: データが存在するか確認
+                    if (!data || !data.candles || data.candles.length === 0) {
+                        console.warn('[Genspark] ⚠️ ローソク足データが空です');
+                        return;
+                    }
+                    
+                    // サーバーから返された latestCandle を使用（フィルタ済み・検証済み）
+                    const latestCandle = data.latestCandle;
                     
                     // ⚠️ 安全性チェック: latestCandle が存在するか確認
                     if (!latestCandle) {
-                        console.log('[Genspark] ⚠️ latestCandle が undefined です');
+                        console.warn('[Genspark] ⚠️ latestCandle が null です (reason: ' + data.reason + ')');
                         return;
                     }
                     
@@ -3768,16 +3861,6 @@ app.get('/trade', async (c) => {
                                 console.log('[Genspark] ⚠️ ミリ秒検出、秒に変換:', latestCandle.timestamp, '→', normalizedTime);
                             }
                             
-                            // 🚫 ヒゲなしローソク足をスキップ（古いデプロイが生成した間違ったローソク足）
-                            const maxBody = Math.max(latestCandle.open, latestCandle.close);
-                            const minBody = Math.min(latestCandle.open, latestCandle.close);
-                            const isNoWick = Math.abs(latestCandle.high - maxBody) < 0.01 && Math.abs(latestCandle.low - minBody) < 0.01;
-                            
-                            if (isNoWick) {
-                                console.log('[Genspark] 🚫 NO-WICK除外（update）:', 'time:', normalizedTime, 'O:', latestCandle.open.toFixed(2), 'H:', latestCandle.high.toFixed(2), 'L:', latestCandle.low.toFixed(2), 'C:', latestCandle.close.toFixed(2));
-                                return;  // このローソク足をスキップ
-                            }
-                            
                             const newBar = {
                                 time: normalizedTime,
                                 open: latestCandle.open,
@@ -3786,7 +3869,7 @@ app.get('/trade', async (c) => {
                                 close: latestCandle.close
                             };
                             
-                            // 🚨 異常ローソク足バリデーション（リアルタイム update 専用）
+                            // 🚨 フロント側二重バリデーション（サーバー側でも検証済みだが念のため）
                             const lastCandle = candlesDataWithRSI?.[candlesDataWithRSI.length - 1];
                             
                             if (!lastCandle) {
@@ -3795,7 +3878,7 @@ app.get('/trade', async (c) => {
                             } else {
                                 // ① ギャップ禁止（openは必ず前回close）
                                 if (Math.abs(newBar.open - lastCandle.close) > 0.01) {
-                                    console.warn('[Genspark] 🚫 ギャップ検出：描画スキップ', {
+                                    console.warn('[Genspark] 🚫 [Front] ギャップ検出：描画スキップ', {
                                         newOpen: newBar.open.toFixed(2),
                                         lastClose: lastCandle.close.toFixed(2),
                                         gap: (newBar.open - lastCandle.close).toFixed(2)
@@ -3805,7 +3888,7 @@ app.get('/trade', async (c) => {
 
                                 // ② 異常ジャンプ禁止（±50ドル以上は除外）
                                 if (Math.abs(newBar.close - lastCandle.close) > 50) {
-                                    console.warn('[Genspark] 🚫 異常値検出：描画スキップ', {
+                                    console.warn('[Genspark] 🚫 [Front] 異常値検出：描画スキップ', {
                                         newClose: newBar.close.toFixed(2),
                                         lastClose: lastCandle.close.toFixed(2),
                                         jump: (newBar.close - lastCandle.close).toFixed(2)
