@@ -97,7 +97,8 @@ async function getGold10Price(db: D1Database): Promise<number> {
   }
 }
 
-// キャッシュ用の価格データ
+// 【厳守】キャッシュ用の初期価格（データベース未使用時のみ）
+// 実際の生成では必ず直前のcloseを使用
 let cachedGoldPrice = 3168.48
 let lastPriceUpdate = 0
 const PRICE_CACHE_DURATION = 30000 // 30秒間キャッシュ（30秒ごとに実価格取得）
@@ -1257,7 +1258,8 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   
   const recent = recentCandles.results as any[]
   
-  // 初期価格または連続価格（3168.48ドルから開始）
+  // 【厳守】完全連続性：必ず前のcloseから開始（初回のみ3168.48）
+  // open = 直前のclose を絶対厳守
   let basePrice = prevCandle ? prevCandle.close : 3168.48
   
   // 【慣性導入】前の足の方向を判定
@@ -1318,8 +1320,8 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
   
   // 【慣性導入】トレンドの加速度（序盤は弱く、中盤で強く、終盤でまた弱める）
   for (let i = 0; i < 30; i++) {
-    // 市場変動成分（平均回帰: 3300ドルを中心に）
-    const meanReversion = (3300 - currentPrice) * 0.001 // 中心価格への微弱な引力
+    // 市場変動成分（平均回帰: 4000ドルを中心に）
+    const meanReversion = (4000 - currentPrice) * 0.001 // 中心価格への微弱な引力
     
     // 【慣性導入】トレンド成分：序盤・終盤は弱く、中盤は強い
     const progress = i / 30
@@ -1347,31 +1349,32 @@ app.post('/api/gold10/generate-next-candle', async (c) => {
     // 次の価格
     currentPrice = currentPrice + meanReversion + trendComponent + randomWalk + userImpact
     
-    // 価格範囲制限：3000-3500ドルに固定
-    currentPrice = Math.max(3000, Math.min(3500, currentPrice))
+    // 価格範囲制限：3000-5000ドルに拡大（要求仕様）
+    currentPrice = Math.max(3000, Math.min(5000, currentPrice))
     
     prices.push(currentPrice)
   }
   
-  // 30秒足の四本値を計算（ヒゲなし版）
-  const open = basePrice // Next_Open = Previous_Close（前のcloseと完全一致）
+  // 【厳守】30秒足の四本値を計算（完全ヒゲなし版）
+  // 絶対ルール：open = 直前のclose（basePrice）
+  const open = basePrice // Next_Open = Previous_Close（ギャップ禁止）
   const close = prices[prices.length - 1]
   
-  // ヒゲなしルール適用
-  // 陽線: high=close, low=open
-  // 陰線: high=open, low=close
-  // 同値: high=low=open=close
+  // 【厳守】ヒゲなしルール（high/lowは実体のみ）
+  // 陽線: high=close, low=open（上ヒゲ・下ヒゲなし）
+  // 陰線: high=open, low=close（上ヒゲ・下ヒゲなし）
+  // 同値: high=low=open=close（十字線）
   let high, low
   if (close > open) {
-    // 陽線
+    // 陽線：実体のみ
     high = close
     low = open
   } else if (close < open) {
-    // 陰線
+    // 陰線：実体のみ
     high = open
     low = close
   } else {
-    // 同値
+    // 同値（十字線）
     high = open
     low = open
   }
