@@ -965,19 +965,11 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     console.log(`[Server] Adjusted flat candle: forced minimum range ${minRange.toFixed(2)}`)
   }
   
-  // ★★★ CRITICAL: No wicks - high/low must equal open/close ★★★
-  let high: number, low: number
-  if (close >= open) {
-    // 陽線（上昇）: high = close, low = open
-    high = close
-    low = open
-  } else {
-    // 陰線（下降）: high = open, low = close
-    high = open
-    low = close
-  }
+  // ★★★ CORRECT: WITH WICKS - high/low include all price movements ★★★
+  const high = Math.max(...prices)
+  const low = Math.min(...prices)
   
-  console.log(`[Server] ✅ NO-WICK candle (v2): open=${open.toFixed(2)}, close=${close.toFixed(2)}, high=${high.toFixed(2)}, low=${low.toFixed(2)}`)
+  console.log(`[Server] ✅ WICK candle: open=${open.toFixed(2)}, close=${close.toFixed(2)}, high=${high.toFixed(2)}, low=${low.toFixed(2)}`)
 
   // Save to DB first (without RSI)
   await db.prepare(`
