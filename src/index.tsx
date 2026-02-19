@@ -939,8 +939,6 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
   }
 
   let close = prices[prices.length - 1]
-  let high = Math.max(open, close, ...prices)
-  let low = Math.min(open, close, ...prices)
   
   // 過度な変動を制限（最大変動幅を0.8%に制限）
   const maxChangePercent = 0.008  // 0.8%
@@ -955,42 +953,31 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     }
   }
   
-  // high/lowも制限
-  if (high > open + maxChange) {
-    high = open + maxChange
-  }
-  if (low < open - maxChange) {
-    low = open - maxChange
-  }
-
   // 最小変動幅を強制（平らなローソク足を防ぐ）
-  // 最大変動制限後に確認し、必要に応じて調整
-  const range = high - low
-  if (range < minVolatility) {
-    // 変動幅が小さすぎる場合、強制的に広げる
-    const adjustment = (minVolatility - range) / 2
-    high = high + adjustment
-    low = low - adjustment
-    
-    // closeも調整（トレンド方向に合わせる）
+  const minRange = open * 0.001  // 0.1%の変動を最小保証
+  if (Math.abs(close - open) < minRange) {
+    // 変動幅が小さすぎる場合、トレンド方向に合わせて調整
     if (trendDirection > 0) {
-      close = open + minVolatility * 0.5  // 上昇
+      close = open + minRange
     } else {
-      close = open - minVolatility * 0.5  // 下降
+      close = open - minRange
     }
-    
-    console.log(`[Server] Adjusted flat candle: range was ${range.toFixed(2)}, adjusted to ${(high - low).toFixed(2)}`)
+    console.log(`[Server] Adjusted flat candle: forced minimum range ${minRange.toFixed(2)}`)
   }
   
-  // 最終確認: rangeが小さすぎる場合（0.1ドル未満）は強制調整
-  const finalRange = high - low
-  if (finalRange < 1.0) {
-    // 最小1ドルの変動を保証
-    const needAdjustment = (1.0 - finalRange) / 2
-    high = high + needAdjustment
-    low = low - needAdjustment
-    console.log(`[Server] Final range adjustment: ${finalRange.toFixed(2)} -> ${(high - low).toFixed(2)}`)
+  // ★★★ CRITICAL: No wicks - high/low must equal open/close ★★★
+  let high: number, low: number
+  if (close >= open) {
+    // 陽線（上昇）: high = close, low = open
+    high = close
+    low = open
+  } else {
+    // 陰線（下降）: high = open, low = close
+    high = open
+    low = close
   }
+  
+  console.log(`[Server] NO-WICK candle: open=${open.toFixed(2)}, close=${close.toFixed(2)}, high=${high.toFixed(2)}, low=${low.toFixed(2)}`)
 
   // Save to DB first (without RSI)
   await db.prepare(`
