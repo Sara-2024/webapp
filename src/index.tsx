@@ -3265,17 +3265,9 @@ app.get('/trade', async (c) => {
                         },
                     });
                     
-                    // 表示範囲を明示的に設定（データ全体 + 右側60本分の余白）
-                    const dataLength = candleData.length;
-                    chart.timeScale().setVisibleLogicalRange({
-                        from: Math.max(0, dataLength - 200),  // 最新200本を表示
-                        to: dataLength + 60  // 右側に60本分の余白
-                    });
-                    
-                    macdChart.timeScale().setVisibleLogicalRange({
-                        from: Math.max(0, dataLength - 200),
-                        to: dataLength + 60
-                    });
+                    // 初期ロード時のみfitContent()を実行（右余白は自動的に維持される）
+                    chart.timeScale().fitContent();
+                    macdChart.timeScale().fitContent();
                     
                     // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
@@ -3980,17 +3972,6 @@ app.get('/trade', async (c) => {
                                     close: latestCandle.close,
                                     rsi: latestCandle.rsi
                                 });
-                                
-                                // 初回データ追加後も表示範囲を調整
-                                const currentLength = candlesDataWithRSI.length;
-                                chart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
-                                macdChart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
                                 return;
                             }
                             
@@ -4044,17 +4025,6 @@ app.get('/trade', async (c) => {
                                     rsi: lastCandle.rsi ?? 50
                                 });
                                 
-                                // 延長処理後も表示範囲を調整
-                                const currentLength = candlesDataWithRSI.length;
-                                chart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
-                                macdChart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
-                                
                                 return;
                             }
                             
@@ -4074,17 +4044,6 @@ app.get('/trade', async (c) => {
                                 // 同じローソク足の更新（上書き）
                                 console.log('[Genspark] 🔄 同じローソク足を更新（上書き）:', normalizedTime);
                                 candlestickSeries.update(newBar);
-                                
-                                // 上書き時も表示範囲を維持
-                                const currentLength = candlesDataWithRSI.length;
-                                chart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
-                                macdChart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
                             } else if (normalizedTime > window.__lastCandleTime) {
                                 // 新しいローソク足の追加
                                 console.log('[Genspark] 🆕 新しいローソク足を追加:', {
@@ -4104,18 +4063,6 @@ app.get('/trade', async (c) => {
                                     low: latestCandle.low,
                                     close: latestCandle.close,
                                     rsi: latestCandle.rsi
-                                });
-                                
-                                // 新しいローソク足が追加されたら表示範囲を調整して右側余白を維持
-                                const currentLength = candlesDataWithRSI.length;
-                                chart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
-                                });
-                                
-                                macdChart.timeScale().setVisibleLogicalRange({
-                                    from: Math.max(0, currentLength - 200),
-                                    to: currentLength + 60
                                 });
                                 
                                 // MACDも更新（最新データのみ再計算）
