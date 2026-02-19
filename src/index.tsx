@@ -2930,7 +2930,7 @@ app.get('/trade', async (c) => {
                 timeScale: {
                     timeVisible: false,
                     secondsVisible: false,
-                    rightOffset: 12,  // 右側の余白を増やして価格表示が見やすく
+                    rightOffset: 40,  // 右側に大きな余白を作って価格表示が見やすく（チャートの約20%）
                     barSpacing: 6,
                     fixLeftEdge: false,
                     fixRightEdge: false,
@@ -5659,7 +5659,7 @@ app.get('/admin', (c) => {
                     timeScale: { 
                         timeVisible: true, 
                         secondsVisible: true,
-                        rightOffset: 12  // 右側の余白を増やして価格表示が見やすく
+                        rightOffset: 40  // 右側に大きな余白を作って価格表示が見やすく（チャートの約20%）
                     }
                 });
                 
@@ -5678,7 +5678,7 @@ app.get('/admin', (c) => {
                     timeScale: { 
                         timeVisible: true, 
                         secondsVisible: true,
-                        rightOffset: 12  // 右側の余白を増やして価格表示が見やすく
+                        rightOffset: 40  // 右側に大きな余白を作って価格表示が見やすく（チャートの約20%）
                     }
                 });
                 
