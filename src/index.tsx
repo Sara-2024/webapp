@@ -2964,6 +2964,13 @@ app.get('/trade', async (c) => {
                 wickDownColor: '#ef5350',
             });
             
+            // チャート作成後に右側余白を確実に適用
+            chart.timeScale().applyOptions({
+                rightOffset: 60,
+                rightBarStaysOnScroll: true,
+                shiftVisibleRangeOnNewBar: true,
+            });
+            
             // MACDチャート
             macdChart = LightweightCharts.createChart(macdContainer, {
                 ...chartOptions,
@@ -2991,6 +2998,13 @@ app.get('/trade', async (c) => {
                     type: 'volume',
                 },
                 priceScaleId: '',
+            });
+            
+            // MACDチャート作成後に右側余白を確実に適用
+            macdChart.timeScale().applyOptions({
+                rightOffset: 60,
+                rightBarStaysOnScroll: true,
+                shiftVisibleRangeOnNewBar: true,
             });
 
             // 両チャートのクロスヘアを同期 + RSI/MACD表示
@@ -3044,6 +3058,19 @@ app.get('/trade', async (c) => {
                 macdChart.applyOptions({ 
                     width: macdContainer.clientWidth,
                     height: macdContainer.clientHeight
+                });
+                
+                // リサイズ後も右側余白を維持
+                chart.timeScale().applyOptions({
+                    rightOffset: 60,
+                    rightBarStaysOnScroll: true,
+                    shiftVisibleRangeOnNewBar: true,
+                });
+                
+                macdChart.timeScale().applyOptions({
+                    rightOffset: 60,
+                    rightBarStaysOnScroll: true,
+                    shiftVisibleRangeOnNewBar: true,
                 });
             });
 
@@ -3224,6 +3251,19 @@ app.get('/trade', async (c) => {
                     // 【修正5: fitContent()で表示範囲を正常化】
                     chart.timeScale().fitContent();
                     macdChart.timeScale().fitContent();
+                    
+                    // データ読み込み後に右側余白を確実に適用
+                    chart.timeScale().applyOptions({
+                        rightOffset: 60,
+                        rightBarStaysOnScroll: true,
+                        shiftVisibleRangeOnNewBar: true,
+                    });
+                    
+                    macdChart.timeScale().applyOptions({
+                        rightOffset: 60,
+                        rightBarStaysOnScroll: true,
+                        shiftVisibleRangeOnNewBar: true,
+                    });
                     
                     // 価格軸を表示データの範囲に合わせて調整
                     // autoScaleとfitContentで自動調整（実際のローソク足の価格範囲に合わせる）
@@ -5719,6 +5759,19 @@ app.get('/admin', (c) => {
                     // チャートの時間軸を同期
                     adminChart.timeScale().fitContent();
                     adminMacdChart.timeScale().fitContent();
+                    
+                    // データ読み込み後に右側余白を確実に適用（管理者チャート）
+                    adminChart.timeScale().applyOptions({
+                        rightOffset: 60,
+                        rightBarStaysOnScroll: true,
+                        shiftVisibleRangeOnNewBar: true,
+                    });
+                    
+                    adminMacdChart.timeScale().applyOptions({
+                        rightOffset: 60,
+                        rightBarStaysOnScroll: true,
+                        shiftVisibleRangeOnNewBar: true,
+                    });
                 }
                 
                 // 情報更新
