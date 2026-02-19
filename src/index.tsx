@@ -3248,25 +3248,7 @@ app.get('/trade', async (c) => {
                     macdSignalSeries.setData(signalLineData);
                     macdHistogramSeries.setData(histogramData);
                     
-                    // 【修正5: fitContent()で表示範囲を正常化】
-                    chart.timeScale().fitContent();
-                    macdChart.timeScale().fitContent();
-                    
-                    // データ読み込み後に右側余白を確実に適用
-                    chart.timeScale().applyOptions({
-                        rightOffset: 60,
-                        rightBarStaysOnScroll: true,
-                        shiftVisibleRangeOnNewBar: true,
-                    });
-                    
-                    macdChart.timeScale().applyOptions({
-                        rightOffset: 60,
-                        rightBarStaysOnScroll: true,
-                        shiftVisibleRangeOnNewBar: true,
-                    });
-                    
                     // 価格軸を表示データの範囲に合わせて調整
-                    // autoScaleとfitContentで自動調整（実際のローソク足の価格範囲に合わせる）
                     chart.priceScale('right').applyOptions({ 
                         autoScale: true,
                         scaleMargins: {
@@ -3275,10 +3257,6 @@ app.get('/trade', async (c) => {
                         },
                     });
                     
-                    // 時間軸をデータに合わせる
-                    chart.timeScale().fitContent();
-                    
-                    // MACDチャートも同様に調整
                     macdChart.priceScale('right').applyOptions({ 
                         autoScale: true,
                         scaleMargins: {
@@ -3286,7 +3264,18 @@ app.get('/trade', async (c) => {
                             bottom: 0.2,
                         },
                     });
-                    macdChart.timeScale().fitContent();
+                    
+                    // 表示範囲を明示的に設定（データ全体 + 右側60本分の余白）
+                    const dataLength = candleData.length;
+                    chart.timeScale().setVisibleLogicalRange({
+                        from: Math.max(0, dataLength - 200),  // 最新200本を表示
+                        to: dataLength + 60  // 右側に60本分の余白
+                    });
+                    
+                    macdChart.timeScale().setVisibleLogicalRange({
+                        from: Math.max(0, dataLength - 200),
+                        to: dataLength + 60
+                    });
                     
                     // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
@@ -4082,6 +4071,18 @@ app.get('/trade', async (c) => {
                                     low: latestCandle.low,
                                     close: latestCandle.close,
                                     rsi: latestCandle.rsi
+                                });
+                                
+                                // 新しいローソク足が追加されたら表示範囲を調整して右側余白を維持
+                                const currentLength = candlesDataWithRSI.length;
+                                chart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
+                                
+                                macdChart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
                                 });
                                 
                                 // MACDも更新（最新データのみ再計算）
