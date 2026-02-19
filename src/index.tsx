@@ -977,7 +977,7 @@ async function generateSingleCandle(db: D1Database, candleTime: number, previous
     low = close
   }
   
-  console.log(`[Server] NO-WICK candle: open=${open.toFixed(2)}, close=${close.toFixed(2)}, high=${high.toFixed(2)}, low=${low.toFixed(2)}`)
+  console.log(`[Server] ✅ NO-WICK candle (v2): open=${open.toFixed(2)}, close=${close.toFixed(2)}, high=${high.toFixed(2)}, low=${low.toFixed(2)}`)
 
   // Save to DB first (without RSI)
   await db.prepare(`
