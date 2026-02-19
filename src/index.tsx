@@ -3852,7 +3852,7 @@ app.get('/trade', async (c) => {
                             diff: latestCandle.timestamp - window.__lastCandleTime
                         });
                         
-                        // 【修正: update()のみで更新、全データ再取得は禁止】
+                        // 【延長方式: 異常時は新規足を増やさず、直前足を延長する】
                         if (candlestickSeries && latestCandle.timestamp != null) {
                             // time単位統一（ミリ秒→秒）
                             let normalizedTime = latestCandle.timestamp;
@@ -3861,6 +3861,87 @@ app.get('/trade', async (c) => {
                                 console.log('[Genspark] ⚠️ ミリ秒検出、秒に変換:', latestCandle.timestamp, '→', normalizedTime);
                             }
                             
+                            const lastCandle = candlesDataWithRSI?.[candlesDataWithRSI.length - 1];
+                            
+                            // 初回データの場合
+                            if (!lastCandle) {
+                                console.warn('[Genspark] ⚠️ lastCandle が存在しません - 初回データ');
+                                const newBar = {
+                                    time: normalizedTime,
+                                    open: latestCandle.open,
+                                    high: latestCandle.high,
+                                    low: latestCandle.low,
+                                    close: latestCandle.close
+                                };
+                                candlestickSeries.update(newBar);
+                                window.__lastCandleTime = normalizedTime;
+                                candlesDataWithRSI.push({
+                                    timestamp: normalizedTime,
+                                    open: latestCandle.open,
+                                    high: latestCandle.high,
+                                    low: latestCandle.low,
+                                    close: latestCandle.close,
+                                    rsi: latestCandle.rsi
+                                });
+                                return;
+                            }
+                            
+                            // 時間差（30秒足前提）
+                            const expectedInterval = 30;
+                            const timeDiff = normalizedTime - lastCandle.timestamp;
+                            
+                            // ① ギャップ検出
+                            const gapDetected = Math.abs(latestCandle.open - lastCandle.close) > 0.01;
+                            
+                            // ② 大きすぎる変動検出（±50ドル以上）
+                            const jumpDetected = Math.abs(latestCandle.close - lastCandle.close) > 50;
+                            
+                            // ③ 時間欠損検出
+                            const timeSkipped = timeDiff > expectedInterval;
+                            
+                            // ────────────────────
+                            // 🚨 異常時の処理（延長方式）
+                            // ────────────────────
+                            if (gapDetected || jumpDetected || timeSkipped) {
+                                console.warn('[Genspark] 🔥 延長処理発動', {
+                                    gapDetected: gapDetected,
+                                    jumpDetected: jumpDetected,
+                                    timeSkipped: timeSkipped,
+                                    timeDiff: timeDiff,
+                                    lastTime: lastCandle.timestamp,
+                                    newTime: normalizedTime
+                                });
+                                
+                                // 🔥 新しい足を追加しない
+                                // 🔥 本数を増やさない
+                                // 🔥 直前足を延長する
+                                const extended = {
+                                    time: normalizedTime,  // 時間だけ最新へ
+                                    open: lastCandle.close,
+                                    high: lastCandle.close,
+                                    low: lastCandle.close,
+                                    close: lastCandle.close
+                                };
+                                
+                                candlestickSeries.update(extended);
+                                window.__lastCandleTime = normalizedTime;
+                                
+                                // candlesDataWithRSIも延長データで更新
+                                candlesDataWithRSI.push({
+                                    timestamp: normalizedTime,
+                                    open: lastCandle.close,
+                                    high: lastCandle.close,
+                                    low: lastCandle.close,
+                                    close: lastCandle.close,
+                                    rsi: lastCandle.rsi ?? 50
+                                });
+                                
+                                return;
+                            }
+                            
+                            // ────────────────────
+                            // 正常時のみ追加
+                            // ────────────────────
                             const newBar = {
                                 time: normalizedTime,
                                 open: latestCandle.open,
@@ -3868,34 +3949,6 @@ app.get('/trade', async (c) => {
                                 low: latestCandle.low,
                                 close: latestCandle.close
                             };
-                            
-                            // 🚨 フロント側二重バリデーション（サーバー側でも検証済みだが念のため）
-                            const lastCandle = candlesDataWithRSI?.[candlesDataWithRSI.length - 1];
-                            
-                            if (!lastCandle) {
-                                console.warn('[Genspark] ⚠️ lastCandle が存在しません - 初回データの可能性');
-                                // 初回データの場合はそのまま描画
-                            } else {
-                                // ① ギャップ禁止（openは必ず前回close）
-                                if (Math.abs(newBar.open - lastCandle.close) > 0.01) {
-                                    console.warn('[Genspark] 🚫 [Front] ギャップ検出：描画スキップ', {
-                                        newOpen: newBar.open.toFixed(2),
-                                        lastClose: lastCandle.close.toFixed(2),
-                                        gap: (newBar.open - lastCandle.close).toFixed(2)
-                                    });
-                                    return;
-                                }
-
-                                // ② 異常ジャンプ禁止（±50ドル以上は除外）
-                                if (Math.abs(newBar.close - lastCandle.close) > 50) {
-                                    console.warn('[Genspark] 🚫 [Front] 異常値検出：描画スキップ', {
-                                        newClose: newBar.close.toFixed(2),
-                                        lastClose: lastCandle.close.toFixed(2),
-                                        jump: (newBar.close - lastCandle.close).toFixed(2)
-                                    });
-                                    return;
-                                }
-                            }
                             
                             // 同じtimeの場合は上書き、新しいtimeの場合は追加
                             if (normalizedTime === window.__lastCandleTime) {
