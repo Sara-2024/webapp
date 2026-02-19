@@ -2964,33 +2964,45 @@ app.get('/trade', async (c) => {
                 wickDownColor: '#ef5350',
             });
             
-            // MACDチャート
+            // MACDチャート（凡例を左側に表示して右側の余白と干渉しないように）
             macdChart = LightweightCharts.createChart(macdContainer, {
                 ...chartOptions,
                 height: macdContainer.clientHeight,
+                rightPriceScale: {
+                    visible: false,  // 右側の価格軸を非表示
+                },
+                leftPriceScale: {
+                    visible: true,   // 左側の価格軸を表示
+                    scaleMargins: {
+                        top: 0.1,
+                        bottom: 0.1,
+                    },
+                },
             });
             
-            // MACD Line (青)
+            // MACD Line (青) - 左側の価格軸に表示
             macdLineSeries = macdChart.addLineSeries({
                 color: '#2196F3',
                 lineWidth: 2,
                 title: 'MACD',
+                priceScaleId: 'left',
             });
             
-            // Signal Line (赤)
+            // Signal Line (赤) - 左側の価格軸に表示
             macdSignalSeries = macdChart.addLineSeries({
                 color: '#FF5252',
                 lineWidth: 2,
                 title: 'Signal',
+                priceScaleId: 'left',
             });
             
-            // Histogram (ヒストグラム)
+            // Histogram (ヒストグラム) - 左側の価格軸に表示
             macdHistogramSeries = macdChart.addHistogramSeries({
                 color: '#26a69a',
                 priceFormat: {
                     type: 'volume',
                 },
-                priceScaleId: '',
+                priceScaleId: 'left',
             });
 
             // 両チャートのクロスヘアを同期 + RSI/MACD表示
@@ -5669,12 +5681,22 @@ app.get('/admin', (c) => {
                     wickUpColor: '#26a69a', wickDownColor: '#ef5350'
                 });
                 
-                // MACDチャート作成
+                // MACDチャート作成（凡例を左側に表示）
                 adminMacdChart = LightweightCharts.createChart(macdContainer, {
                     width: macdContainer.clientWidth,
                     height: 150,
                     layout: { background: { color: '#ffffff' }, textColor: '#333' },
                     grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+                    rightPriceScale: {
+                        visible: false,  // 右側の価格軸を非表示
+                    },
+                    leftPriceScale: {
+                        visible: true,   // 左側の価格軸を表示
+                        scaleMargins: {
+                            top: 0.1,
+                            bottom: 0.1,
+                        },
+                    },
                     timeScale: { 
                         timeVisible: true, 
                         secondsVisible: true,
@@ -5682,9 +5704,9 @@ app.get('/admin', (c) => {
                     }
                 });
                 
-                adminMacdLineSeries = adminMacdChart.addLineSeries({ color: '#2196F3', lineWidth: 2, title: 'MACD' });
-                adminMacdSignalSeries = adminMacdChart.addLineSeries({ color: '#FF6D00', lineWidth: 2, title: 'Signal' });
-                adminMacdHistogramSeries = adminMacdChart.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' } });
+                adminMacdLineSeries = adminMacdChart.addLineSeries({ color: '#2196F3', lineWidth: 2, title: 'MACD', priceScaleId: 'left' });
+                adminMacdSignalSeries = adminMacdChart.addLineSeries({ color: '#FF6D00', lineWidth: 2, title: 'Signal', priceScaleId: 'left' });
+                adminMacdHistogramSeries = adminMacdChart.addHistogramSeries({ color: '#26a69a', priceFormat: { type: 'volume' }, priceScaleId: 'left' });
                 
                 // 12時間分のデータ取得
                 const response = await axios.get('/api/gold10/candles?hours=12');
