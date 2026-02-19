@@ -2930,7 +2930,7 @@ app.get('/trade', async (c) => {
                 timeScale: {
                     timeVisible: false,
                     secondsVisible: false,
-                    rightOffset: 3,
+                    rightOffset: 12,  // 右側の余白を増やして価格表示が見やすく
                     barSpacing: 6,
                     fixLeftEdge: false,
                     fixRightEdge: false,
@@ -5656,7 +5656,11 @@ app.get('/admin', (c) => {
                     height: 500,
                     layout: { background: { color: '#ffffff' }, textColor: '#333' },
                     grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
-                    timeScale: { timeVisible: true, secondsVisible: true }
+                    timeScale: { 
+                        timeVisible: true, 
+                        secondsVisible: true,
+                        rightOffset: 12  // 右側の余白を増やして価格表示が見やすく
+                    }
                 });
                 
                 adminCandlestickSeries = adminChart.addCandlestickSeries({
@@ -5671,7 +5675,11 @@ app.get('/admin', (c) => {
                     height: 150,
                     layout: { background: { color: '#ffffff' }, textColor: '#333' },
                     grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
-                    timeScale: { timeVisible: true, secondsVisible: true }
+                    timeScale: { 
+                        timeVisible: true, 
+                        secondsVisible: true,
+                        rightOffset: 12  // 右側の余白を増やして価格表示が見やすく
+                    }
                 });
                 
                 adminMacdLineSeries = adminMacdChart.addLineSeries({ color: '#2196F3', lineWidth: 2, title: 'MACD' });
