@@ -3786,6 +3786,34 @@ app.get('/trade', async (c) => {
                                 close: latestCandle.close
                             };
                             
+                            // 🚨 異常ローソク足バリデーション（リアルタイム update 専用）
+                            const lastCandle = candlesDataWithRSI?.[candlesDataWithRSI.length - 1];
+                            
+                            if (!lastCandle) {
+                                console.warn('[Genspark] ⚠️ lastCandle が存在しません - 初回データの可能性');
+                                // 初回データの場合はそのまま描画
+                            } else {
+                                // ① ギャップ禁止（openは必ず前回close）
+                                if (Math.abs(newBar.open - lastCandle.close) > 0.01) {
+                                    console.warn('[Genspark] 🚫 ギャップ検出：描画スキップ', {
+                                        newOpen: newBar.open.toFixed(2),
+                                        lastClose: lastCandle.close.toFixed(2),
+                                        gap: (newBar.open - lastCandle.close).toFixed(2)
+                                    });
+                                    return;
+                                }
+
+                                // ② 異常ジャンプ禁止（±50ドル以上は除外）
+                                if (Math.abs(newBar.close - lastCandle.close) > 50) {
+                                    console.warn('[Genspark] 🚫 異常値検出：描画スキップ', {
+                                        newClose: newBar.close.toFixed(2),
+                                        lastClose: lastCandle.close.toFixed(2),
+                                        jump: (newBar.close - lastCandle.close).toFixed(2)
+                                    });
+                                    return;
+                                }
+                            }
+                            
                             // 同じtimeの場合は上書き、新しいtimeの場合は追加
                             if (normalizedTime === window.__lastCandleTime) {
                                 // 同じローソク足の更新（上書き）
