@@ -1024,8 +1024,11 @@ app.get('/api/gold10/candles/latest', async (c) => {
     LIMIT ?
   `).bind(now, limit).all()
 
-  // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）
-  const filteredCandles = candles.results.filter((candle: any) => {
+  // 生データを保存（内部ロジック用）
+  const rawCandles = candles.results || []
+
+  // 🚫 ヒゲなしローソク足を除外（古いデプロイが生成した間違ったローソク足）- 表示用のみ
+  const filteredCandles = rawCandles.filter((candle: any) => {
     const maxBody = Math.max(candle.open, candle.close)
     const minBody = Math.min(candle.open, candle.close)
     // ヒゲなし = high == maxBody かつ low == minBody
@@ -1033,9 +1036,8 @@ app.get('/api/gold10/candles/latest', async (c) => {
     return !isNoWick  // ヒゲなしを除外
   })
 
-  // Calculate countdown
-  // 🔒 現在時刻以前の最新ローソク足のみを取得（未来のローソク足は除外）
-  const latestCandle = filteredCandles[0]  // フィルタ済みの最新ローソク足
+  // ⚠️ 重要: latestCandle は必ずフィルタ前の生データから取得（undefined 回避）
+  const latestCandle = rawCandles[0] ?? null
   
   // 次のローソク足の時刻を計算（30秒刻み）
   // now を 30秒単位に切り捨て → 30秒足す = 次の30秒境界
@@ -1058,6 +1060,7 @@ app.get('/api/gold10/candles/latest', async (c) => {
   const secondsUntilNext = Math.max(0, nextCandleTime - now)
   
   console.log(`[Server] Countdown: now=${now}, latestCandle=${latestCandle?.timestamp}, nextCandleTime=${nextCandleTime}, secondsUntilNext=${secondsUntilNext}`)
+  console.log(`[Server] Raw candles: ${rawCandles.length}, Filtered candles: ${filteredCandles.length}`)
 
   return c.json({
     candles: filteredCandles.reverse(),
@@ -3694,9 +3697,23 @@ app.get('/trade', async (c) => {
                     const response = await axios.get('/api/gold10/candles/latest?limit=100');
                     const data = response.data;
                     
+                    // ⚠️ 安全性チェック: データが存在するか確認
+                    if (!data || !data.candles || data.candles.length === 0) {
+                        console.log('[Genspark] ⚠️ ローソク足データが空です');
+                        return;
+                    }
+                    
+                    const latestCandle = data.candles[data.candles.length - 1];
+                    
+                    // ⚠️ 安全性チェック: latestCandle が存在するか確認
+                    if (!latestCandle) {
+                        console.log('[Genspark] ⚠️ latestCandle が undefined です');
+                        return;
+                    }
+                    
                     // Update countdown
                     const countdownEl = document.getElementById('nextCandleCountdown');
-                    if (countdownEl) {
+                    if (countdownEl && data.secondsUntilNext != null) {
                         const secondsLeft = data.secondsUntilNext;
                         countdownEl.textContent = secondsLeft + '秒';
                         if (secondsLeft <= 10) {
@@ -3707,12 +3724,10 @@ app.get('/trade', async (c) => {
                     }
                     
                     // Check for new candles
-                    if (data.candles && data.candles.length > 0) {
-                        const latestCandle = data.candles[data.candles.length - 1];
-                        
+                    if (latestCandle && latestCandle.close != null) {
                         // 【常にRSIと価格を更新】
                         // Update RSI display
-                        if (latestCandle.rsi) {
+                        if (latestCandle.rsi != null) {
                             const rsiElement = document.getElementById('gold10RSI');
                             if (rsiElement) {
                                 rsiElement.textContent = latestCandle.rsi.toFixed(1);
@@ -3720,6 +3735,32 @@ app.get('/trade', async (c) => {
                                     rsiElement.style.color = '#ef5350';
                                 } else if (latestCandle.rsi <= 30) {
                                     rsiElement.style.color = '#26a69a';
+                                } else {
+                                    rsiElement.style.color = '#2962FF';
+                                }
+                            }
+                        }
+                        
+                        // Update price display
+                        const priceElement = document.getElementById('gold10Price');
+                        if (priceElement) {
+                            priceElement.textContent = '$' + latestCandle.close.toFixed(2);
+                        }
+                        
+                        // Update currentPrice for trading
+                        currentPrice = latestCandle.close;
+                        
+                        // デバッグログ: タイムスタンプ比較
+                        console.log('[Genspark] 📊 タイムスタンプ比較:', {
+                            latestCandle: latestCandle.timestamp,
+                            lastCandleTime: window.__lastCandleTime,
+                            isNew: latestCandle.timestamp > window.__lastCandleTime,
+                            isSame: latestCandle.timestamp === window.__lastCandleTime,
+                            diff: latestCandle.timestamp - window.__lastCandleTime
+                        });
+                        
+                        // 【修正: update()のみで更新、全データ再取得は禁止】
+                        if (candlestickSeries && latestCandle.timestamp != null) {
                                 } else {
                                     rsiElement.style.color = '#2962FF';
                                 }
