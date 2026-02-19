@@ -3766,6 +3766,16 @@ app.get('/trade', async (c) => {
                                 console.log('[Genspark] ⚠️ ミリ秒検出、秒に変換:', latestCandle.timestamp, '→', normalizedTime);
                             }
                             
+                            // 🚫 ヒゲなしローソク足をスキップ（古いデプロイが生成した間違ったローソク足）
+                            const maxBody = Math.max(latestCandle.open, latestCandle.close);
+                            const minBody = Math.min(latestCandle.open, latestCandle.close);
+                            const isNoWick = Math.abs(latestCandle.high - maxBody) < 0.01 && Math.abs(latestCandle.low - minBody) < 0.01;
+                            
+                            if (isNoWick) {
+                                console.log('[Genspark] 🚫 NO-WICK除外（update）:', 'time:', normalizedTime, 'O:', latestCandle.open.toFixed(2), 'H:', latestCandle.high.toFixed(2), 'L:', latestCandle.low.toFixed(2), 'C:', latestCandle.close.toFixed(2));
+                                return;  // このローソク足をスキップ
+                            }
+                            
                             const newBar = {
                                 time: normalizedTime,
                                 open: latestCandle.open,
