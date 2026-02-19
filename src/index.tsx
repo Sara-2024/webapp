@@ -3980,6 +3980,17 @@ app.get('/trade', async (c) => {
                                     close: latestCandle.close,
                                     rsi: latestCandle.rsi
                                 });
+                                
+                                // 初回データ追加後も表示範囲を調整
+                                const currentLength = candlesDataWithRSI.length;
+                                chart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
+                                macdChart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
                                 return;
                             }
                             
@@ -4033,6 +4044,17 @@ app.get('/trade', async (c) => {
                                     rsi: lastCandle.rsi ?? 50
                                 });
                                 
+                                // 延長処理後も表示範囲を調整
+                                const currentLength = candlesDataWithRSI.length;
+                                chart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
+                                macdChart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
+                                
                                 return;
                             }
                             
@@ -4052,6 +4074,17 @@ app.get('/trade', async (c) => {
                                 // 同じローソク足の更新（上書き）
                                 console.log('[Genspark] 🔄 同じローソク足を更新（上書き）:', normalizedTime);
                                 candlestickSeries.update(newBar);
+                                
+                                // 上書き時も表示範囲を維持
+                                const currentLength = candlesDataWithRSI.length;
+                                chart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
+                                macdChart.timeScale().setVisibleLogicalRange({
+                                    from: Math.max(0, currentLength - 200),
+                                    to: currentLength + 60
+                                });
                             } else if (normalizedTime > window.__lastCandleTime) {
                                 // 新しいローソク足の追加
                                 console.log('[Genspark] 🆕 新しいローソク足を追加:', {
