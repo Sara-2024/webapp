@@ -244,6 +244,41 @@ app.get('/api/auth/me', async (c) => {
   return c.json(user)
 })
 
+// ユーザー通知取得API
+app.get('/api/notifications', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const notifications = await c.env.DB.prepare(`
+    SELECT id, message, is_read, created_at
+    FROM user_notifications
+    WHERE user_id = ? AND is_read = 0
+    ORDER BY created_at DESC
+  `).bind(userId).all()
+
+  return c.json({ notifications: notifications.results || [] })
+})
+
+// 通知を既読にするAPI
+app.post('/api/notifications/:id/read', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const notificationId = c.req.param('id')
+  
+  await c.env.DB.prepare(`
+    UPDATE user_notifications
+    SET is_read = 1
+    WHERE id = ? AND user_id = ?
+  `).bind(notificationId, userId).run()
+
+  return c.json({ success: true })
+})
+
 // 特別ボーナス受け取り状況確認API
 app.get('/api/special-bonus/status', async (c) => {
   const userId = getCookie(c, 'user_id')
@@ -2655,6 +2690,21 @@ app.get('/trade', async (c) => {
         </div>
     </header>
 
+    <!-- 通知バナー（ポイント付与など） -->
+    <div id="notificationBanner" class="hidden bg-gradient-to-r from-green-500 to-green-600 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center">
+                <i class="fas fa-gift text-2xl mr-3"></i>
+                <div>
+                    <p id="bannerMessage" class="font-bold text-lg"></p>
+                </div>
+            </div>
+            <button onclick="closeBanner()" class="text-white hover:text-gray-200 transition">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+    </div>
+
     <!-- 通知ポップアップ -->
     <div id="notification" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 hidden">
         <div class="bg-white rounded-lg shadow-2xl p-6 min-w-[300px] border-4">
@@ -3517,9 +3567,50 @@ app.get('/trade', async (c) => {
                 const profitElement = document.getElementById('totalProfit');
                 profitElement.textContent = '¥' + Math.round(user.total_profit).toLocaleString('ja-JP');
                 profitElement.className = user.total_profit >= 0 ? 'text-xl font-bold text-green-600' : 'text-xl font-bold text-red-600';
+                
+                // 通知をチェック
+                checkNotifications();
             } catch (error) {
                 window.location.href = '/';
             }
+        }
+
+        async function checkNotifications() {
+            try {
+                const response = await axios.get('/api/notifications');
+                const notifications = response.data.notifications;
+                
+                if (notifications && notifications.length > 0) {
+                    // 最初の未読通知を表示
+                    const notification = notifications[0];
+                    showNotificationBanner(notification.message, notification.id);
+                }
+            } catch (error) {
+                console.error('通知取得エラー:', error);
+            }
+        }
+
+        function showNotificationBanner(message, notificationId) {
+            const banner = document.getElementById('notificationBanner');
+            const messageEl = document.getElementById('bannerMessage');
+            messageEl.textContent = message;
+            banner.classList.remove('hidden');
+            banner.dataset.notificationId = notificationId;
+        }
+
+        async function closeBanner() {
+            const banner = document.getElementById('notificationBanner');
+            const notificationId = banner.dataset.notificationId;
+            
+            if (notificationId) {
+                try {
+                    await axios.post('/api/notifications/' + notificationId + '/read');
+                } catch (error) {
+                    console.error('通知既読エラー:', error);
+                }
+            }
+            
+            banner.classList.add('hidden');
         }
 
         async function updateGoldPrice() {
