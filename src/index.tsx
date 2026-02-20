@@ -2690,20 +2690,31 @@ app.get('/trade', async (c) => {
         </div>
     </header>
 
-    <!-- 通知バナー（ポイント付与など） -->
-    <div id="notificationBanner" class="hidden bg-gradient-to-r from-green-500 to-green-600 text-white p-4 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center">
-            <div class="flex items-center">
-                <i class="fas fa-gift text-2xl mr-3"></i>
-                <div>
-                    <p id="bannerMessage" class="font-bold text-lg"></p>
+    <!-- 通知バナー（ポイント付与など） - 画面中央表示 -->
+    <div id="notificationBanner" class="hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[100] w-11/12 max-w-2xl">
+        <div class="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-2xl shadow-2xl p-6 sm:p-8 border-4 border-white animate-pulse">
+            <div class="flex justify-between items-start mb-4">
+                <div class="flex items-center flex-1">
+                    <i class="fas fa-gift text-4xl sm:text-5xl mr-4 animate-bounce"></i>
+                    <div class="flex-1">
+                        <h3 class="text-xl sm:text-2xl font-bold mb-2">🎉 お知らせ 🎉</h3>
+                        <p id="bannerMessage" class="text-base sm:text-lg font-semibold leading-relaxed"></p>
+                    </div>
                 </div>
+                <button onclick="closeBanner()" class="text-white hover:text-gray-200 transition ml-4 text-2xl">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-            <button onclick="closeBanner()" class="text-white hover:text-gray-200 transition">
-                <i class="fas fa-times text-xl"></i>
-            </button>
+            <div class="text-center mt-4">
+                <button onclick="closeBanner()" class="bg-white text-green-600 font-bold py-2 px-8 rounded-full hover:bg-gray-100 transition">
+                    閉じる
+                </button>
+            </div>
         </div>
     </div>
+    
+    <!-- 通知バナー用の背景オーバーレイ -->
+    <div id="notificationOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[99]" onclick="closeBanner()"></div>
 
     <!-- 通知ポップアップ -->
     <div id="notification" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 hidden">
@@ -3592,14 +3603,17 @@ app.get('/trade', async (c) => {
 
         function showNotificationBanner(message, notificationId) {
             const banner = document.getElementById('notificationBanner');
+            const overlay = document.getElementById('notificationOverlay');
             const messageEl = document.getElementById('bannerMessage');
             messageEl.textContent = message;
             banner.classList.remove('hidden');
+            overlay.classList.remove('hidden');
             banner.dataset.notificationId = notificationId;
         }
 
         async function closeBanner() {
             const banner = document.getElementById('notificationBanner');
+            const overlay = document.getElementById('notificationOverlay');
             const notificationId = banner.dataset.notificationId;
             
             if (notificationId) {
@@ -3611,6 +3625,7 @@ app.get('/trade', async (c) => {
             }
             
             banner.classList.add('hidden');
+            overlay.classList.add('hidden');
         }
 
         async function updateGoldPrice() {
