@@ -5316,9 +5316,6 @@ app.get('/chat', (c) => {
                 const messages = response.data;
                 const container = document.getElementById('messageArea');
                 
-                // 現在のスクロール位置を保存
-                const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
-                
                 if (messages.length === 0) {
                     container.innerHTML = '<p class="text-center text-gray-500 py-4">メッセージがありません</p>';
                     return;
@@ -5343,10 +5340,7 @@ app.get('/chat', (c) => {
                     \`;
                 }).join('');
 
-                // ユーザーがスクロール中でない場合、または最下部にいた場合のみ自動スクロール
-                if (wasAtBottom || !isUserScrolling) {
-                    scrollToBottom();
-                }
+                // 自動スクロールは一切行わない（ユーザーが手動でスクロール）
             } catch (error) {
                 console.error('メッセージ取得エラー:', error);
             }
