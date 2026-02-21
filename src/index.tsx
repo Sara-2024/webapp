@@ -5223,9 +5223,19 @@ app.get('/chat', (c) => {
     <div class="container mx-auto p-4 max-w-4xl">
         <div class="bg-white rounded-lg shadow-md flex flex-col" style="height: calc(100vh - 180px);">
             <!-- メッセージエリア -->
-            <div id="messageArea" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <div id="messageArea" class="flex-1 overflow-y-auto p-4 space-y-3" style="position: relative;">
                 <p class="text-center text-gray-500 py-4">読み込み中...</p>
             </div>
+
+            <!-- 最新メッセージに戻るボタン -->
+            <button 
+                id="scrollToBottomBtn"
+                onclick="scrollToBottom(true)"
+                class="hidden fixed bottom-32 right-8 bg-yellow-500 hover:bg-yellow-600 text-white rounded-full p-4 shadow-lg z-50 transition-transform hover:scale-110"
+                title="最新メッセージへ"
+            >
+                <i class="fas fa-arrow-down text-xl"></i>
+            </button>
 
             <!-- 入力エリア -->
             <div class="border-t border-gray-200 p-4">
@@ -5251,6 +5261,8 @@ app.get('/chat', (c) => {
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
         let currentUserId = null;
+        let isUserScrolling = false;
+        let scrollTimeout = null;
 
         async function loadCurrentUser() {
             try {
@@ -5261,11 +5273,51 @@ app.get('/chat', (c) => {
             }
         }
 
+        // スクロール位置を監視
+        function setupScrollListener() {
+            const container = document.getElementById('messageArea');
+            const scrollBtn = document.getElementById('scrollToBottomBtn');
+            
+            container.addEventListener('scroll', () => {
+                const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+                
+                // ユーザーがスクロールしている
+                isUserScrolling = true;
+                clearTimeout(scrollTimeout);
+                
+                // 1秒後にスクロール状態をリセット
+                scrollTimeout = setTimeout(() => {
+                    isUserScrolling = false;
+                }, 1000);
+                
+                // 最下部にいない場合はボタンを表示
+                if (!isAtBottom) {
+                    scrollBtn.classList.remove('hidden');
+                } else {
+                    scrollBtn.classList.add('hidden');
+                }
+            });
+        }
+
+        // 最新メッセージまでスクロール
+        function scrollToBottom(force = false) {
+            const container = document.getElementById('messageArea');
+            const scrollBtn = document.getElementById('scrollToBottomBtn');
+            
+            if (force || !isUserScrolling) {
+                container.scrollTop = container.scrollHeight;
+                scrollBtn.classList.add('hidden');
+            }
+        }
+
         async function loadMessages() {
             try {
                 const response = await axios.get('/api/chat/messages');
                 const messages = response.data;
                 const container = document.getElementById('messageArea');
+                
+                // 現在のスクロール位置を保存
+                const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
                 
                 if (messages.length === 0) {
                     container.innerHTML = '<p class="text-center text-gray-500 py-4">メッセージがありません</p>';
@@ -5291,8 +5343,10 @@ app.get('/chat', (c) => {
                     \`;
                 }).join('');
 
-                // 最新メッセージまでスクロール
-                container.scrollTop = container.scrollHeight;
+                // ユーザーがスクロール中でない場合、または最下部にいた場合のみ自動スクロール
+                if (wasAtBottom || !isUserScrolling) {
+                    scrollToBottom();
+                }
             } catch (error) {
                 console.error('メッセージ取得エラー:', error);
             }
@@ -5309,6 +5363,8 @@ app.get('/chat', (c) => {
                 const response = await axios.post('/api/chat/messages', { message });
                 input.value = '';
                 await loadMessages();
+                // 自分がメッセージを送信した時は強制的に最下部へ
+                scrollToBottom(true);
                 
                 // 🎁 ポイント獲得アラート（チャットページ用）
                 if (response.data.pointsAwarded) {
@@ -5342,7 +5398,12 @@ app.get('/chat', (c) => {
         }
 
         loadCurrentUser();
-        loadMessages();
+        loadMessages().then(() => {
+            // 初回ロード後にスクロールリスナーを設定
+            setupScrollListener();
+            // 初回は最下部へスクロール
+            scrollToBottom(true);
+        });
         
         // 5秒ごとに新しいメッセージをチェック
         setInterval(loadMessages, 5000);
