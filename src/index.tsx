@@ -2716,22 +2716,34 @@ app.get('/trade', async (c) => {
     </header>
 
     <!-- 通知バナー（ポイント付与など） - 画面中央表示 -->
-    <div id="notificationBanner" class="hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[100] w-11/12 max-w-2xl">
-        <div class="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-2xl shadow-2xl p-6 sm:p-8 border-4 border-white animate-pulse">
-            <div class="flex justify-between items-start mb-4">
-                <div class="flex items-center flex-1">
-                    <i class="fas fa-gift text-4xl sm:text-5xl mr-4 animate-bounce"></i>
+    <div id="notificationBanner" class="hidden fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[100] w-11/12 max-w-3xl">
+        <div class="bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600 text-white rounded-3xl shadow-2xl p-6 sm:p-10 border-4 border-white">
+            <div class="flex justify-between items-start mb-6">
+                <div class="flex items-start flex-1">
+                    <i class="fas fa-calendar-check text-5xl sm:text-6xl mr-4 sm:mr-6 animate-bounce"></i>
                     <div class="flex-1">
-                        <h3 class="text-xl sm:text-2xl font-bold mb-2">🎉 お知らせ 🎉</h3>
-                        <p id="bannerMessage" class="text-base sm:text-lg font-semibold leading-relaxed"></p>
+                        <h3 class="text-2xl sm:text-3xl font-bold mb-3 flex items-center">
+                            <i class="fas fa-bell mr-2"></i>重要なお知らせ
+                        </h3>
+                        <div id="bannerMessage" class="text-base sm:text-xl leading-relaxed space-y-2"></div>
                     </div>
                 </div>
-                <button onclick="closeBanner()" class="text-white hover:text-gray-200 transition ml-4 text-2xl">
+                <button onclick="closeBanner()" class="text-white hover:text-gray-200 transition ml-4 text-3xl">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="text-center mt-4">
-                <button onclick="closeBanner()" class="bg-white text-green-600 font-bold py-2 px-8 rounded-full hover:bg-gray-100 transition">
+            
+            <!-- 説明ボックス -->
+            <div class="bg-white bg-opacity-20 rounded-xl p-4 mb-6">
+                <p class="text-sm sm:text-base text-white">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <strong>週次ランキング制について：</strong>毎週月曜日に全ユーザーの資金が100万円にリセットされます。
+                    リセット前の成績は履歴として保存され、マイページでいつでも確認できます。
+                </p>
+            </div>
+            
+            <div id="bannerActionContainer" class="text-center mt-6">
+                <button onclick="closeBanner()" class="bg-white text-green-600 font-bold py-3 px-8 rounded-full hover:bg-gray-100 transition">
                     閉じる
                 </button>
             </div>
@@ -3630,7 +3642,27 @@ app.get('/trade', async (c) => {
             const banner = document.getElementById('notificationBanner');
             const overlay = document.getElementById('notificationOverlay');
             const messageEl = document.getElementById('bannerMessage');
-            messageEl.textContent = message;
+            const actionContainer = document.getElementById('bannerActionContainer');
+            
+            // メッセージを設定
+            messageEl.innerHTML = message;
+            
+            // 週次リセット通知の場合、マイページボタンを追加
+            if (message.includes('週次ランキング') || message.includes('リセット')) {
+                actionContainer.innerHTML = 
+                    '<a href="/mypage" class="bg-white text-blue-600 font-bold py-3 px-8 rounded-full hover:bg-gray-100 transition inline-block mr-3">' +
+                        '<i class="fas fa-user mr-2"></i>マイページで確認' +
+                    '</a>' +
+                    '<button onclick="closeBanner()" class="bg-transparent border-2 border-white text-white font-bold py-3 px-8 rounded-full hover:bg-white hover:text-blue-600 transition">' +
+                        '閉じる' +
+                    '</button>';
+            } else {
+                actionContainer.innerHTML = 
+                    '<button onclick="closeBanner()" class="bg-white text-green-600 font-bold py-3 px-8 rounded-full hover:bg-gray-100 transition">' +
+                        '閉じる' +
+                    '</button>';
+            }
+            
             banner.classList.remove('hidden');
             overlay.classList.remove('hidden');
             banner.dataset.notificationId = notificationId;
