@@ -668,6 +668,31 @@ app.get('/api/trade/history', async (c) => {
   return c.json(results)
 })
 
+// 週次履歴取得
+app.get('/api/user/weekly-history', async (c) => {
+  const userId = getCookie(c, 'user_id')
+  if (!userId) {
+    return c.json({ error: '未認証' }, 401)
+  }
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT 
+      week_start_date,
+      week_end_date,
+      final_balance,
+      total_profit,
+      total_trades,
+      ranking,
+      created_at
+    FROM weekly_history 
+    WHERE user_id = ?
+    ORDER BY week_start_date DESC
+    LIMIT 20
+  `).bind(userId).all()
+
+  return c.json(results)
+})
+
 // AIフィードバック取得
 app.get('/api/trade/ai-feedback', async (c) => {
   const userId = getCookie(c, 'user_id')
@@ -4424,6 +4449,26 @@ app.get('/mypage', (c) => {
             </div>
         </div>
 
+        <!-- 週次履歴 -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-4">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-bold"><i class="fas fa-calendar-week mr-2 text-yellow-500"></i>週次成績履歴</h2>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg px-3 py-1 text-sm text-blue-700">
+                    <i class="fas fa-info-circle mr-1"></i>毎週月曜日に更新
+                </div>
+            </div>
+            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 mb-4">
+                <p class="text-sm text-gray-700">
+                    <i class="fas fa-trophy text-yellow-500 mr-2"></i>
+                    <strong>週次ランキングシステム：</strong>毎週日曜日の23:59に集計し、月曜日の00:00に全員の資金が100万円にリセットされます。
+                    リセット前の成績は履歴として記録され、ランキング上位者にはポイントが付与されます。
+                </p>
+            </div>
+            <div id="weeklyHistory" class="space-y-3 max-h-96 overflow-y-auto">
+                <p class="text-center text-gray-500 py-4">読み込み中...</p>
+            </div>
+        </div>
+
         <!-- 取引履歴 -->
         <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-2xl font-bold mb-4"><i class="fas fa-history mr-2 text-yellow-500"></i>取引履歴</h2>
@@ -4447,6 +4492,58 @@ app.get('/mypage', (c) => {
                 document.getElementById('consecutiveDays').textContent = user.consecutive_login_days;
             } catch (error) {
                 window.location.href = '/';
+            }
+        }
+
+        async function loadWeeklyHistory() {
+            try {
+                const response = await axios.get('/api/user/weekly-history');
+                const history = response.data;
+                const container = document.getElementById('weeklyHistory');
+                
+                if (history.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500 py-4">週次履歴がありません</p>';
+                    return;
+                }
+
+                container.innerHTML = history.map(record => {
+                    const profitColor = record.total_profit >= 0 ? 'text-green-600' : 'text-red-600';
+                    const rankingBadge = record.ranking <= 3 
+                        ? \`<span class="px-2 py-1 rounded-full text-xs font-bold \${record.ranking === 1 ? 'bg-yellow-400 text-yellow-900' : record.ranking === 2 ? 'bg-gray-300 text-gray-800' : 'bg-orange-300 text-orange-900'}">
+                            \${record.ranking === 1 ? '🥇' : record.ranking === 2 ? '🥈' : '🥉'} \${record.ranking}位
+                           </span>\`
+                        : \`<span class="px-2 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">\${record.ranking}位</span>\`;
+                    
+                    return \`
+                        <div class="border-2 \${record.ranking <= 3 ? 'border-yellow-300 bg-yellow-50' : 'border-gray-200 bg-white'} rounded-lg p-4">
+                            <div class="flex justify-between items-start mb-3">
+                                <div>
+                                    <div class="text-sm text-gray-600 mb-1">
+                                        \${record.week_start_date} ～ \${record.week_end_date}
+                                    </div>
+                                    \${rankingBadge}
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-xs text-gray-600">最終残高</div>
+                                    <div class="text-xl font-bold text-blue-600">¥\${Math.round(record.final_balance).toLocaleString('ja-JP')}</div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 pt-3 border-t border-gray-200">
+                                <div>
+                                    <div class="text-xs text-gray-600">累計損益</div>
+                                    <div class="text-lg font-bold \${profitColor}">¥\${Math.round(record.total_profit).toLocaleString('ja-JP')}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-600">取引回数</div>
+                                    <div class="text-lg font-bold text-purple-600">\${record.total_trades}回</div>
+                                </div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+            } catch (error) {
+                console.error('週次履歴取得エラー:', error);
+                document.getElementById('weeklyHistory').innerHTML = '<p class="text-center text-gray-500 py-4">週次履歴の取得に失敗しました</p>';
             }
         }
 
@@ -4600,6 +4697,7 @@ app.get('/mypage', (c) => {
         }
 
         loadUserData();
+        loadWeeklyHistory();
         loadTradeHistory();
         loadBonusStatus();
     </script>
