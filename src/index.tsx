@@ -2722,10 +2722,7 @@ app.get('/trade', async (c) => {
                 <div class="flex items-start flex-1">
                     <i class="fas fa-calendar-check text-5xl sm:text-6xl mr-4 sm:mr-6 animate-bounce"></i>
                     <div class="flex-1">
-                        <h3 class="text-2xl sm:text-3xl font-bold mb-3 flex items-center">
-                            <i class="fas fa-bell mr-2"></i>重要なお知らせ
-                        </h3>
-                        <div id="bannerMessage" class="text-base sm:text-xl leading-relaxed space-y-2"></div>
+                        <div id="bannerMessage" class="text-base sm:text-lg leading-relaxed whitespace-pre-line"></div>
                     </div>
                 </div>
                 <button onclick="closeBanner()" class="text-white hover:text-gray-200 transition ml-4 text-3xl">
