@@ -3361,9 +3361,12 @@ app.get('/trade', async (c) => {
                         },
                     });
                     
-                    // 初期ロード時のみfitContent()を実行（右余白は自動的に維持される）
+                    // 初期ロード時のみfitContent()を実行し、その後rightOffsetを再適用
                     chart.timeScale().fitContent();
+                    chart.timeScale().applyOptions({ rightOffset: 60 });
+                    
                     macdChart.timeScale().fitContent();
+                    macdChart.timeScale().applyOptions({ rightOffset: 60 });
                     
                     // 最新価格とRSIを表示
                     const latestCandle = candles[candles.length - 1];
