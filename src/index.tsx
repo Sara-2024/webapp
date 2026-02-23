@@ -955,6 +955,64 @@ async function releaseLock(kv: KVNamespace, key: string, token: string): Promise
   }
 }
 
+// 15分以上経過したポジションを自動決済する関数
+async function autoCloseExpiredPositions(db: D1Database, currentPrice: number): Promise<void> {
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000)
+    .toISOString()
+    .replace('T', ' ')
+    .substring(0, 19)
+  
+  // 15分以上経過したオープンポジションを取得（全ユーザー対象）
+  const { results: expiredTrades } = await db.prepare(`
+    SELECT * FROM trades 
+    WHERE status = 'OPEN' AND entry_time <= ?
+  `).bind(fifteenMinutesAgo).all()
+
+  if (!expiredTrades || expiredTrades.length === 0) {
+    return
+  }
+
+  console.log(`[Server] Auto-closing ${expiredTrades.length} expired positions...`)
+  
+  const exitTime = new Date().toISOString()
+  
+  // 各ポジションを決済
+  for (const trade of expiredTrades) {
+    const entryPrice = trade.entry_price as number
+    const amount = trade.amount as number
+    const type = trade.type as string
+    const userId = trade.user_id as number
+
+    // 損益計算（1ロット = 10オンス、利益率を1/10に調整）
+    let profitLoss = 0
+    if (type === 'BUY') {
+      profitLoss = (currentPrice - entryPrice) * amount * 10 * 152.96
+    } else {
+      profitLoss = (entryPrice - currentPrice) * amount * 10 * 152.96
+    }
+
+    // トレード更新
+    await db.prepare(`
+      UPDATE trades 
+      SET exit_price = ?, profit_loss = ?, status = 'CLOSED', exit_time = ?
+      WHERE id = ?
+    `).bind(currentPrice, profitLoss, exitTime, trade.id).run()
+
+    // ユーザーの残高と統計更新
+    await db.prepare(`
+      UPDATE users 
+      SET balance = balance + ?, 
+          total_profit = total_profit + ?,
+          total_trades = total_trades + 1
+      WHERE id = ?
+    `).bind(profitLoss, profitLoss, userId).run()
+    
+    console.log(`[Server] Auto-closed position ${trade.id} for user ${userId}: ${type} ${amount} lot, P/L: ${profitLoss.toFixed(2)}`)
+  }
+  
+  console.log(`[Server] ✅ Auto-closed ${expiredTrades.length} positions successfully`)
+}
+
 // Server-side candle generation helper
 async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000)
@@ -988,6 +1046,13 @@ async function generateCandleIfNeeded(db: D1Database): Promise<boolean> {
     const candleTime = latest.timestamp + (i + 1) * 30
     const newCandle = await generateSingleCandle(db, candleTime, lastClose)
     lastClose = newCandle.close  // 次のローソク足は今のローソク足の終値から始まる
+  }
+
+  // 15分以上経過したポジションを自動決済
+  try {
+    await autoCloseExpiredPositions(db, lastClose)
+  } catch (error) {
+    console.error('[Server] Auto-close error:', error)
   }
 
   return true
@@ -1993,6 +2058,7 @@ app.get('/api/ranking/profit', async (c) => {
     SELECT username, total_profit, total_trades
     FROM users
     WHERE is_admin = 0
+    AND username NOT IN ('佐藤 麻衣')
     ORDER BY total_profit DESC
     LIMIT 100
   `).all()
@@ -2006,6 +2072,7 @@ app.get('/api/ranking/trades', async (c) => {
     SELECT username, total_trades, total_profit
     FROM users
     WHERE is_admin = 0
+    AND username NOT IN ('佐藤 麻衣')
     ORDER BY total_trades DESC
     LIMIT 100
   `).all()
