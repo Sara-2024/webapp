@@ -123,6 +123,40 @@ async function updateUserActivity(db: D1Database, userId: number) {
   `).bind(userId).run()
 }
 
+// ユーティリティ関数：メンテナンス中かチェック
+function isMaintenanceMode(): boolean {
+  const now = new Date()
+  const maintenanceStart = new Date('2026-03-04T12:00:00+09:00')
+  const maintenanceEnd = new Date('2026-03-06T12:00:00+09:00')
+  return now >= maintenanceStart && now < maintenanceEnd
+}
+
+// ========== メンテナンスAPI ==========
+
+// メンテナンス状態取得
+app.get('/api/maintenance/status', async (c) => {
+  const now = new Date()
+  
+  // メンテナンス期間: 2026年3月4日 12:00 ～ 3月6日 12:00（48時間）
+  const maintenanceStart = new Date('2026-03-04T12:00:00+09:00')
+  const maintenanceEnd = new Date('2026-03-06T12:00:00+09:00')
+  
+  const isMaintenance = now >= maintenanceStart && now < maintenanceEnd
+  const isPreMaintenance = now < maintenanceStart
+  
+  return c.json({
+    isMaintenance,
+    isPreMaintenance,
+    maintenanceStart: maintenanceStart.toISOString(),
+    maintenanceEnd: maintenanceEnd.toISOString(),
+    message: isMaintenance 
+      ? '現在メンテナンス中です。3月6日（金）12:00まで全機能をご利用いただけません。'
+      : isPreMaintenance
+      ? '【重要】3月4日（水）12:00～3月6日（金）12:00の48時間、大規模メンテナンスを実施いたします。期間中は全機能がご利用いただけません。'
+      : null
+  })
+})
+
 // ========== 認証API ==========
 
 // ユーザーログイン
@@ -431,6 +465,11 @@ app.get('/api/trade/gold-price', async (c) => {
 
 // ポジション開く（買う/売る）
 app.post('/api/trade/open', async (c) => {
+  // メンテナンスチェック
+  if (isMaintenanceMode()) {
+    return c.json({ error: 'メンテナンス中のため、取引を開始できません' }, 503)
+  }
+
   const userId = getCookie(c, 'user_id')
   if (!userId) {
     return c.json({ error: '未認証' }, 401)
@@ -479,6 +518,11 @@ app.post('/api/trade/open', async (c) => {
 
 // ポジション決済
 app.post('/api/trade/close/:tradeId', async (c) => {
+  // メンテナンスチェック
+  if (isMaintenanceMode()) {
+    return c.json({ error: 'メンテナンス中のため、決済できません' }, 503)
+  }
+
   const userId = getCookie(c, 'user_id')
   if (!userId) {
     return c.json({ error: '未認証' }, 401)
@@ -2814,6 +2858,51 @@ app.get('/trade', async (c) => {
         </div>
     </div>
     
+    <!-- メンテナンス告知バナー（事前告知） -->
+    <div id="preMaintenanceBanner" class="hidden fixed top-0 left-0 right-0 z-[100] bg-gradient-to-r from-red-600 to-red-700 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center flex-1">
+                    <i class="fas fa-exclamation-triangle text-2xl mr-3 animate-pulse"></i>
+                    <div>
+                        <div class="font-bold text-lg">【重要】大規模メンテナンスのお知らせ</div>
+                        <div class="text-sm mt-1">
+                            <span class="font-semibold">3月4日（水）12:00～3月6日（金）12:00</span>の48時間、全機能がご利用いただけません。
+                        </div>
+                    </div>
+                </div>
+                <button onclick="hidePreMaintenanceBanner()" class="ml-4 text-white hover:text-gray-200">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- メンテナンス中バナー -->
+    <div id="maintenanceBanner" class="hidden fixed inset-0 z-[200] bg-black bg-opacity-90 flex items-center justify-center">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl mx-4 text-center">
+            <div class="mb-6">
+                <i class="fas fa-tools text-6xl text-red-600 animate-pulse"></i>
+            </div>
+            <h1 class="text-3xl font-bold text-gray-800 mb-4">メンテナンス中</h1>
+            <p class="text-lg text-gray-600 mb-6">
+                現在、システムメンテナンスを実施しております。<br>
+                大変ご迷惑をおかけいたしますが、しばらくお待ちください。
+            </p>
+            <div class="bg-gray-100 rounded-lg p-4 mb-6">
+                <div class="text-sm text-gray-600 mb-2">メンテナンス期間</div>
+                <div class="font-bold text-xl text-gray-800">
+                    3月4日（水）12:00 ～ 3月6日（金）12:00
+                </div>
+                <div class="text-sm text-gray-500 mt-2">(48時間)</div>
+            </div>
+            <p class="text-sm text-gray-500">
+                <i class="fas fa-clock mr-2"></i>
+                終了予定時刻: <span id="maintenanceEndTime" class="font-semibold">3月6日（金）12:00</span>
+            </p>
+        </div>
+    </div>
+    
     <!-- 通知バナー用の背景オーバーレイ -->
     <div id="notificationOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[99]" onclick="closeBanner()"></div>
 
@@ -3012,6 +3101,52 @@ app.get('/trade', async (c) => {
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
+        // ========== メンテナンス管理 ==========
+        let maintenanceCheckInterval = null;
+
+        // メンテナンス状態をチェック
+        async function checkMaintenanceStatus() {
+            try {
+                const response = await axios.get('/api/maintenance/status');
+                const status = response.data;
+                
+                if (status.isMaintenance) {
+                    // メンテナンス中
+                    document.getElementById('maintenanceBanner').classList.remove('hidden');
+                    document.getElementById('preMaintenanceBanner').classList.add('hidden');
+                    // 取引ボタンを無効化
+                    disableTrading();
+                } else if (status.isPreMaintenance && status.message) {
+                    // 事前告知
+                    document.getElementById('preMaintenanceBanner').classList.remove('hidden');
+                    document.getElementById('maintenanceBanner').classList.add('hidden');
+                } else {
+                    // 通常時
+                    document.getElementById('maintenanceBanner').classList.add('hidden');
+                    document.getElementById('preMaintenanceBanner').classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('メンテナンス状態の取得に失敗:', error);
+            }
+        }
+
+        // 取引機能を無効化
+        function disableTrading() {
+            const buyButton = document.getElementById('buyButton');
+            const sellButton = document.getElementById('sellButton');
+            if (buyButton) buyButton.disabled = true;
+            if (sellButton) sellButton.disabled = true;
+        }
+
+        // 事前告知バナーを非表示
+        function hidePreMaintenanceBanner() {
+            document.getElementById('preMaintenanceBanner').classList.add('hidden');
+        }
+
+        // ページ読み込み時とタブがアクティブになった時にメンテナンス状態をチェック
+        checkMaintenanceStatus();
+        maintenanceCheckInterval = setInterval(checkMaintenanceStatus, 60000); // 1分ごとにチェック
+
         // ========== GOLD10チャート関連 ==========
         let chart = null;
         let macdChart = null;
@@ -4385,6 +4520,14 @@ app.get('/mypage', (c) => {
 </head>
 <body class="bg-gray-100">
 
+    <!-- メンテナンス告知バナー -->
+    <div id="maintenanceBanner" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-3 px-4 shadow-lg">
+        <div class="container mx-auto">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <span class="font-bold">【重要】3月4日（水）12:00～3月6日（金）12:00 メンテナンス実施（48時間）</span>
+        </div>
+    </div>
+
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-user mr-1 sm:mr-2"></i>マイページ</h1>
@@ -4579,6 +4722,21 @@ app.get('/mypage', (c) => {
 
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <script>
+        // メンテナンス状態をチェック
+        async function checkMaintenanceStatus() {
+            try {
+                const response = await axios.get('/api/maintenance/status');
+                const status = response.data;
+                if (status.isMaintenance || status.isPreMaintenance) {
+                    document.getElementById('maintenanceBanner').classList.remove('hidden');
+                    document.body.style.paddingTop = '60px';
+                }
+            } catch (error) {
+                console.error('メンテナンス状態の取得に失敗:', error);
+            }
+        }
+        checkMaintenanceStatus();
+
         async function loadUserData() {
             try {
                 const response = await axios.get('/api/auth/me');
@@ -4819,6 +4977,14 @@ app.get('/ranking', (c) => {
 </head>
 <body class="bg-gray-100">
 
+    <!-- メンテナンス告知バナー -->
+    <div id="maintenanceBanner" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-3 px-4 shadow-lg">
+        <div class="container mx-auto">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <span class="font-bold">【重要】3月4日（水）12:00～3月6日（金）12:00 メンテナンス実施（48時間）</span>
+        </div>
+    </div>
+
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-lg sm:text-xl font-bold"><i class="fas fa-trophy mr-1 sm:mr-2"></i>ランキング</h1>
@@ -4910,6 +5076,21 @@ app.get('/ranking', (c) => {
     <script>
         // axiosのデフォルト設定: Cookieを常に送信
         axios.defaults.withCredentials = true;
+        
+        // メンテナンス状態をチェック
+        async function checkMaintenanceStatus() {
+            try {
+                const response = await axios.get('/api/maintenance/status');
+                const status = response.data;
+                if (status.isMaintenance || status.isPreMaintenance) {
+                    document.getElementById('maintenanceBanner').classList.remove('hidden');
+                    document.body.style.paddingTop = '60px';
+                }
+            } catch (error) {
+                console.error('メンテナンス状態の取得に失敗:', error);
+            }
+        }
+        checkMaintenanceStatus();
         
         function showTab(tab) {
             if (tab === 'profit') {
@@ -5036,6 +5217,14 @@ app.get('/videos', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
+
+    <!-- メンテナンス告知バナー -->
+    <div id="maintenanceBanner" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-3 px-4 shadow-lg">
+        <div class="container mx-auto">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <span class="font-bold">【重要】3月4日（水）12:00～3月6日（金）12:00 メンテナンス実施（48時間）</span>
+        </div>
+    </div>
 
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
@@ -5383,6 +5572,14 @@ app.get('/chat', (c) => {
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
+
+    <!-- メンテナンス告知バナー -->
+    <div id="maintenanceBanner" class="hidden fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-3 px-4 shadow-lg">
+        <div class="container mx-auto">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <span class="font-bold">【重要】3月4日（水）12:00～3月6日（金）12:00 メンテナンス実施（48時間）</span>
+        </div>
+    </div>
 
     <header class="bg-gradient-to-r from-yellow-600 to-yellow-500 text-white p-3 sm:p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
