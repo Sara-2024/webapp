@@ -141,8 +141,9 @@ app.get('/api/maintenance/status', async (c) => {
   const maintenanceStart = new Date('2026-03-04T12:00:00+09:00')
   const maintenanceEnd = new Date('2026-03-06T12:00:00+09:00')
   
+  // 全ユーザーに対して事前告知バナーを常に表示（メンテナンス期間前）
   const isMaintenance = now >= maintenanceStart && now < maintenanceEnd
-  const isPreMaintenance = now < maintenanceStart
+  const isPreMaintenance = true  // 常に事前告知を表示
   
   return c.json({
     isMaintenance,
