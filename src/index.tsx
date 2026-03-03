@@ -137,19 +137,45 @@ function isMaintenanceMode(): boolean {
 app.get('/api/maintenance/status', async (c) => {
   const now = new Date()
   
+  // テストユーザー確認（パスワード: 073111q）
+  const userId = getCookie(c, 'user_id')
+  let isTestUser = false
+  
+  if (userId) {
+    const user = await c.env.DB.prepare(`
+      SELECT password FROM users WHERE id = ?
+    `).bind(userId).first()
+    
+    if (user && user.password === '073111q') {
+      isTestUser = true
+    }
+  }
+  
   // メンテナンス期間: 2026年3月4日 12:00 ～ 3月6日 12:00（48時間）
   const maintenanceStart = new Date('2026-03-04T12:00:00+09:00')
   const maintenanceEnd = new Date('2026-03-06T12:00:00+09:00')
   
-  // 全ユーザーに対して事前告知バナーを常に表示（メンテナンス期間前）
-  const isMaintenance = now >= maintenanceStart && now < maintenanceEnd
-  const isPreMaintenance = true  // 常に事前告知を表示
+  // テストユーザーのみ：今から1分間だけメンテナンス中バナーを表示
+  const testMaintenanceEnd = new Date(now.getTime() + 60000) // 現在時刻 + 1分
+  
+  let isMaintenance = false
+  let isPreMaintenance = true
+  
+  if (isTestUser) {
+    // テストユーザーは今から1分間メンテナンス中
+    isMaintenance = true
+    isPreMaintenance = false
+  } else {
+    // 通常ユーザーは通常のロジック
+    isMaintenance = now >= maintenanceStart && now < maintenanceEnd
+    isPreMaintenance = true  // 常に事前告知を表示
+  }
   
   return c.json({
     isMaintenance,
     isPreMaintenance,
-    maintenanceStart: maintenanceStart.toISOString(),
-    maintenanceEnd: maintenanceEnd.toISOString(),
+    maintenanceStart: isTestUser ? now.toISOString() : maintenanceStart.toISOString(),
+    maintenanceEnd: isTestUser ? testMaintenanceEnd.toISOString() : maintenanceEnd.toISOString(),
     message: isMaintenance 
       ? '現在メンテナンス中です。3月6日（金）12:00まで全機能をご利用いただけません。'
       : isPreMaintenance
