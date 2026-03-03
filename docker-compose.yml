@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev:sandbox
+    restart: unless-stopped
+
+  # D1 Database (ローカル開発用)
+  # 本番環境ではCloudflare D1を使用
+  # このコンテナはローカル開発時のみ使用
+  
+networks:
+  default:
+    name: webapp-network
